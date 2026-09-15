@@ -48,6 +48,29 @@ abstract class GenericTextRenderer<T extends LabelElement> extends Renderer<T> {
 
   text.TextStyleSheet? _getStyle() => element.styleSheet?.item;
 
+  TextStyle _displayStyle(TextStyle style) {
+    final color = style.color;
+    return color == null
+        ? style
+        : style.copyWith(color: EinkDisplay.ink(color));
+  }
+
+  InlineSpan _displaySpan(InlineSpan span) {
+    if (span is! TextSpan) return span;
+    return TextSpan(
+      text: span.text,
+      children: span.children?.map(_displaySpan).toList(),
+      style: span.style == null ? null : _displayStyle(span.style!),
+      recognizer: span.recognizer,
+      mouseCursor: span.mouseCursor,
+      onEnter: span.onEnter,
+      onExit: span.onExit,
+      semanticsLabel: span.semanticsLabel,
+      locale: span.locale,
+      spellOut: span.spellOut,
+    );
+  }
+
   InlineSpan _createSpan(
     NoteData document,
     List<PlaceholderDimensions> dimensions,
@@ -56,9 +79,10 @@ abstract class GenericTextRenderer<T extends LabelElement> extends Renderer<T> {
     text.DefinedParagraphProperty? parent,
   ]) {
     final styleSheet = _getStyle();
-    final style = styleSheet
+    final resolvedStyle = styleSheet
         .resolveSpanProperty(span.property)
         ?.toFlutter(parent, element.foreground);
+    final style = resolvedStyle == null ? null : _displayStyle(resolvedStyle);
     switch (span) {
       case text.TextSpan():
         return TextSpan(text: span.text, style: style);
@@ -174,8 +198,19 @@ abstract class GenericTextRenderer<T extends LabelElement> extends Renderer<T> {
   ]) {
     final tp = _tp;
     if (tp == null || tp.text == null) return;
-    tp.layout(maxWidth: rect.width);
-    tp.paint(canvas, element.getOffset(rect.height).toOffset());
+    final originalText = tp.text;
+    if (EinkDisplay.isPainting) {
+      tp.text = _displaySpan(originalText!);
+    }
+    try {
+      tp.layout(maxWidth: rect.width);
+      tp.paint(canvas, element.getOffset(rect.height).toOffset());
+    } finally {
+      if (!identical(tp.text, originalText)) {
+        tp.text = originalText;
+        tp.layout(maxWidth: rect.width);
+      }
+    }
     final placeholders = tp.inlinePlaceholderBoxes ?? [];
     final orderedRendered = _renderedLatex.entries
         .sorted((a, b) => a.key.compareTo(b.key))

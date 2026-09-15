@@ -12,7 +12,7 @@ void drawPatternTextureOnCanvas(
   canvas.drawRect(
     Rect.fromLTWH(translation.dx, translation.dy, size.width, size.height),
     Paint()
-      ..color = texture.boxColor.toColor()
+      ..color = EinkDisplay.paper(texture.boxColor.toColor())
       ..style = PaintingStyle.fill,
   );
   if (scale <= 0) return;
@@ -34,7 +34,7 @@ void drawPatternTextureOnCanvas(
         Offset(x + translation.dx, size.height + translation.dy),
         Paint()
           ..strokeWidth = texture.boxXStroke * scale
-          ..color = texture.boxXColor.toColor(),
+          ..color = EinkDisplay.ink(texture.boxXColor.toColor()),
       );
       count++;
       if (count >= texture.boxXCount) {
@@ -61,7 +61,7 @@ void drawPatternTextureOnCanvas(
         Offset(size.width + translation.dx, y + translation.dy),
         Paint()
           ..strokeWidth = texture.boxYStroke * scale
-          ..color = texture.boxYColor.toColor(),
+          ..color = EinkDisplay.ink(texture.boxYColor.toColor()),
       );
       count++;
       if (count >= texture.boxYCount) {

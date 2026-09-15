@@ -108,13 +108,13 @@ class PolygonRenderer extends Renderer<PolygonElement> {
 
     if (property.fill.a > 0) {
       final fillPaint = Paint()
-        ..color = property.fill.toColor()
+        ..color = EinkDisplay.ink(property.fill.toColor())
         ..style = PaintingStyle.fill;
       canvas.drawPath(path, fillPaint);
     }
     if (property.color.a > 0) {
       final paint = Paint()
-        ..color = property.color.toColor()
+        ..color = EinkDisplay.ink(property.color.toColor())
         ..style = PaintingStyle.stroke
         ..strokeWidth = property.strokeWidth
         ..strokeCap = StrokeCap.round

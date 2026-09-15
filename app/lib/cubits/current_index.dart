@@ -1608,8 +1608,10 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.scale(options.quality);
+    // Screen caches may contain Magic Pie display-only monochrome pixels.
+    // Export always renders original document elements instead of reusing them.
     final viewport =
-        cameraViewport ??
+        cameraViewport?.forExport(page) ??
         state.cameraViewport.unbake(unbakedElements: renderers);
     final transform = CameraTransform(
       options.quality,

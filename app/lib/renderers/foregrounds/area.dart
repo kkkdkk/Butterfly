@@ -1,4 +1,5 @@
 import 'package:butterfly/cubits/transform.dart';
+import 'package:butterfly/helpers/eink.dart';
 import 'package:butterfly/renderers/renderer.dart';
 import 'package:butterfly_api/butterfly_api.dart';
 import 'package:flutter/material.dart';
@@ -20,11 +21,13 @@ class AreaForegroundRenderer extends Renderer<Area> {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5 / transform.size
-      ..color = colorScheme?.primary ?? Colors.blue;
+      ..color = EinkDisplay.ink(colorScheme?.primary ?? Colors.blue);
     final backgroundPaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = (colorScheme?.primaryContainer ?? Colors.lightBlue).withValues(
-        alpha: 0.2,
+      ..color = EinkDisplay.ink(
+        (colorScheme?.primaryContainer ?? Colors.lightBlue).withValues(
+          alpha: 0.2,
+        ),
       );
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, Radius.circular(5 / transform.size)),
