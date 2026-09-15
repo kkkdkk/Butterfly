@@ -37,6 +37,9 @@ class EinkDisplay {
 
   static bool get isPainting => _context != null;
 
+  static Color get paperColor =>
+      _context?.darkPaper == true ? Colors.black : Colors.white;
+
   /// Sets the document paper contrast before foreground or cache rendering.
   static void preparePaper(Color color) {
     final context = _context;
