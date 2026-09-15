@@ -31,6 +31,16 @@
 
 脚本依次执行 `flutter pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。脚本仅在当前进程中设置 `FLUTTER_WINDOWS=false` 和 `FLUTTER_LINUX=false`，避免 Android-only 构建为未使用的桌面插件创建符号链接，因此当前配置不要求启用 Windows Developer Mode。Flutter 的项目级或全局 `enable-windows-desktop` / `enable-linux-desktop` 显式配置优先于环境变量；若它们被显式开启，需先移除该覆盖或启用 Windows Developer Mode。所有临时环境变量在成功或失败后都会恢复，且不会改写 Flutter 的全局配置。构建使用 `--no-pub` 避免重复解析依赖。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
 
+### 生成真机兼容性测试文档
+
+依赖就绪后，从 `app` 目录执行：
+
+```powershell
+& 'D:\code\works\butterfly-magicpie-toolchain\flutter\bin\cache\dart-sdk\bin\dart.exe' run tool/magicpie_fixture.dart ../.magicpie-output/magicpie-color-fixture.bfly
+```
+
+这是仅含合成数据的两页文档：浅色纸上红/蓝/半透明笔迹、彩色形状和红色 PNG；深色纸上白色/蓝色笔迹。脚本会验证保存再读，拒绝覆盖已有文件。用于设备导入、黑白屏显和原色导出对照，不包含个人笔记。
+
 预期产物：
 
 ```text

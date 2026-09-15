@@ -1,3 +1,14 @@
+## Magic Pie adaptation (unofficial)
+
+This branch adapts Butterfly 2.5.5 for the Magicpie M1 monochrome tablet.
+It preserves the upstream document format and original document colors while
+adapting device-only UI and ink display. It does **not** implement vendor EPD
+acceleration. Upstream attribution and licenses remain below and in LICENSE /
+BRANDING_LICENSE.
+
+[产品需求](docs/magicpie/PRD.md) · [实施计划](docs/magicpie/PLAN.md) ·
+[构建说明](docs/magicpie/BUILD.md)
+
 <div align="center">
 
 <img src="https://raw.githubusercontent.com/LinwoodDev/butterfly/develop/app/images/logo.png" width="350px" />
