@@ -26,6 +26,7 @@
 - 桥接测试覆盖：DPR/Rect 协议、不可用库回退、无效 Rect、迟到 prepare、frame 后交接、dispose 取消交接、新笔未完成时禁止清除。
 - 全量测试后补充串行化平台 present 请求，相关 9 项测试再次通过。
 - 首轮真机启动无崩溃，但默认笔映射被空值条件误挡；已改为检查 `activeTool` 分类。开启 `magicpieNativeInk=true` 跑默认配置的 viewport 启动测试及压力/桥接测试，9 项通过。需要安装该修正版复核实际 start。
+- 第二轮 release 真机返回 prepared=false；R8 mapping 确认 `FlutterView` 被改名为 `j6.s`，原先按类名字符串查找失效。改为 `instanceof FlutterView`，保持混淆安全；这不是 JNI 加载或硬件失败证据。
 - JNI 静态审查仍不能证明 `setup(bitmap)` 会主动呈现最终位图。当前版本须实测抬笔后是否立即出现最终压力轮廓；若依赖后续点击/重绘才出现，单独 A/B `renderRect`，不同时改变 clear 与其他刷新变量。
 
 ## 待真机验收

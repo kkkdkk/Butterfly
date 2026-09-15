@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import io.flutter.plugin.common.MethodChannel;
+import io.flutter.embedding.android.FlutterView;
 
 /** Experimental Magicpie-only native preview controller. Flutter remains the input owner. */
 @Keep
@@ -75,7 +76,12 @@ public final class MagicpieNativeInkController {
         }
 
         CaptureTarget target = parseCaptureTarget(arguments);
-        if (target == null || !shutdownNativeSession()) {
+        if (target == null) {
+            Log.w(TAG, "Native preview not prepared: Flutter surface or bounds unavailable");
+            result.success(false);
+            return;
+        }
+        if (!shutdownNativeSession()) {
             result.success(false);
             return;
         }
@@ -180,8 +186,7 @@ public final class MagicpieNativeInkController {
             return null;
         }
 
-        View flutterView = findView(activity.getWindow().getDecorView(),
-                "io.flutter.embedding.android.FlutterView");
+        View flutterView = findFlutterView(activity.getWindow().getDecorView());
         SurfaceView surfaceView = findSurfaceView(flutterView);
         if (flutterView == null || surfaceView == null
                 || flutterView.getWidth() == 0 || flutterView.getHeight() == 0) {
@@ -232,17 +237,17 @@ public final class MagicpieNativeInkController {
         return value != null && value > 0 && Double.isFinite(value);
     }
 
-    private View findView(View view, String className) {
+    private View findFlutterView(View view) {
         if (view == null) {
             return null;
         }
-        if (view.getClass().getName().equals(className)) {
+        if (view instanceof FlutterView) {
             return view;
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int index = 0; index < group.getChildCount(); index++) {
-                View found = findView(group.getChildAt(index), className);
+                View found = findFlutterView(group.getChildAt(index));
                 if (found != null) {
                     return found;
                 }
