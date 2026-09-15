@@ -80,15 +80,23 @@ void main() {
 
   testWidgets('presentation waits for the final Flutter frame', (tester) async {
     await session.prepare(const Rect.fromLTWH(0, 0, 80, 90), 1);
+    session.addDirty(const Rect.fromLTWH(10, 20, 30, 40));
     final presented = session.presentAfterFrame();
     expect(calls.map((call) => call.method), ['prepare']);
     await tester.pump();
     await presented;
     expect(calls.map((call) => call.method), ['prepare', 'present']);
+    expect(calls.last.arguments, {
+      'left': 10.0,
+      'top': 20.0,
+      'width': 30.0,
+      'height': 40.0,
+    });
   });
 
   testWidgets('dispose cancels queued frame presentation', (tester) async {
     await session.prepare(const Rect.fromLTWH(0, 0, 80, 90), 1);
+    session.addDirty(const Rect.fromLTWH(10, 20, 30, 40));
     final presented = session.presentAfterFrame();
     await session.dispose();
     await tester.pump();
@@ -100,6 +108,7 @@ void main() {
     tester,
   ) async {
     await session.prepare(const Rect.fromLTWH(0, 0, 80, 90), 1);
+    session.addDirty(const Rect.fromLTWH(10, 20, 30, 40));
     var ready = true;
     final presented = session.presentAfterFrame(isReady: () => ready);
     ready = false;
@@ -107,5 +116,30 @@ void main() {
     await presented;
     expect(calls.map((call) => call.method), ['prepare']);
     expect(session.active, isTrue);
+  });
+
+  testWidgets('unchanged viewport never requests a whole canvas refresh', (
+    tester,
+  ) async {
+    await session.prepare(const Rect.fromLTWH(0, 0, 80, 90), 1);
+    await session.presentAfterFrame();
+    expect(calls.map((call) => call.method), ['prepare']);
+  });
+
+  testWidgets('dirty rectangles merge, clip and scale to physical pixels', (
+    tester,
+  ) async {
+    await session.prepare(const Rect.fromLTWH(4, 50, 80, 90), 1.25);
+    session.addDirty(const Rect.fromLTWH(-10, 20, 30, 20));
+    session.addDirty(const Rect.fromLTWH(10, 30, 20, 30));
+    final presented = session.presentAfterFrame();
+    await tester.pump();
+    await presented;
+    expect(calls.last.arguments, {
+      'left': 0.0,
+      'top': 25.0,
+      'width': 37.5,
+      'height': 50.0,
+    });
   });
 }

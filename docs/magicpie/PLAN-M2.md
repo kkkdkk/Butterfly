@@ -60,6 +60,10 @@
 | P10.11 | 分层记录 Android 历史压力、Flutter 压力、提交点压力范围 | P10.4 | 轻重变化有数值证据，不记录笔迹坐标 |
 | P10.12 | 调查原生压感笔刷接口，区分实时与最终压感外观 | P10.11 | 不猜测 ABI 参数；无证据时保留固定宽度限制 |
 | P10.13 | 压力归一化、提交和 `.bfly` 保存重开回归 | P10.11 | 逐点压力保持，最终 renderer 仍使用真实压力 |
+| P10.14 | 根据流畅但等宽/全刷反馈，原生期间抑制 Flutter 活动前景与频繁 bake | P10.10 | 输入/pressure/ElementsCreated 保留，MOVE 不反复重建预览 |
+| P10.15 | 修复 native 模式 onViewportUpdated 提前清空 submitted 的交接顺序 | P10.14 | renderer 插入后一次完成回调；压力和一次 undo 保持 |
+| P10.16 | 抬笔 stop 不 destroy；Flutter 成帧后 setup/start/renderRect 只更新已完成笔迹区域 | P10.15 | 无逐笔 clear，DPR/合并/裁剪测试通过，新笔期间不清旧区域 |
+| P10.17 | 真机轻重线和连续十笔复验，记录输入延迟、局部矩形及用户闪屏反馈 | P10.16 | 不把压力数值或局部调用返回成功当作视觉通过 |
 
 ## 6. P11：跨端、导出与同步闭环
 
@@ -90,6 +94,6 @@
 - [x] P7.1-P7.4：事实基线、PRD 和 Plan 已形成。
 - [x] P8：73c37e04d 已实现并通过全量 103 项测试、analyze、构建及真机安装；用户反馈仍然很慢，低延迟目标需继续 P9/P10。
 - [ ] P9：快写与 Android 4 笔完整事件通过，20 次生命周期调用及重启无崩溃；视觉恢复/刷新模式未全部验收。只批准 P10 有界实验，见 PROBE-VERIFICATION.md。
-- [ ] P10：Android 与 Dart 实验接入、压力数值日志、`.bfly` 压力往返回归已实现；111 项测试通过。01:09:43 真机 Butterfly 画布 native start 与 Flutter prepared=true；等待轻—重—轻实笔、最终显示交接及保存操作验收。见 NATIVE-INTEGRATION-VERIFICATION.md。
+- [ ] P10：用户确认首版流畅，但压感外观与频繁全刷未通过。局部交接、去除重复前景和整幅 clear 的第二版已安装，01:28:41 native start/prepared=true；114 项测试通过。等待本轮实笔、最终压力外观与全屏闪烁反馈。见 NATIVE-INTEGRATION-VERIFICATION.md。
 - [ ] P11：文件解析证据已有，真实电脑 UI 与同步尚未闭环。
 - [ ] P12：待上述工作完成。

@@ -67,6 +67,10 @@ public final class HandWritingNative {
         native_handwriting_render_brush_color(nativePointer, width, color, enabled);
     }
 
+    public void renderRect(Rect rect) {
+        native_handwriting_render_rect(nativePointer, rect);
+    }
+
     public void destroy() {
         native_handwriting_destroy(nativePointer);
     }

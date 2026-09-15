@@ -46,3 +46,18 @@
 - 新建浅色空白画布，选择默认笔；01:09:43.954 Android `Native fixed-width preview started`，01:09:43.955 Flutter `MagicpieInk prepared=true`（PID 26974）。
 - 实际 Flutter SurfaceView 捕获、JNI init/setup/brush/start 已运行成功。启动 crash buffer 为空；不等于连续笔画、压力外观或保存后文档显示通过。
 - 已请用户在该画布画轻—重—轻长线，抬笔后不点其他控件，分别核对快写与最终压感轮廓；等待反馈。
+
+## 用户反馈与第二轮修正
+
+- 用户实笔：“流畅了，但没有粗细变化”；多笔后出现全屏刷新。低延迟初步通过，压力外观与刷新频率未通过。
+- 当前日志确认压力并非全被抹掉：Flutter 与提交点存在约 0.03–1.0 的变化；部分短笔只有两个提交点，不能宣称采样与外观均完整。
+- 01:12:18 原生因 stylus cancel 停止，随后多笔事件集中到达；InputDispatcher 记录约 15,000 ms 输入处理延迟。未捕获主线程阻塞栈，不能把并行渲染竞争写成已证实唯一根因。
+- 代码证实 `addUnbaked` 的同步 viewport 通知提前清空 `_submittedElements`，导致之后真实 renderer-created hook 看不到待完成笔迹。仅在 native 模式让完成权归属后置 hook，不改普通模式和嵌入流程。
+- 第二轮：原生会话期间不绘制 Flutter 活动前景、不逐点 refresh；保留输入点、压力、提交、最终 renderer。抬笔先 stop 保留 native 资源，随后成帧捕获和 `setup → brush → start → renderRect`，去除交接 clear。
+- 脏区来自最终 PenRenderer.expandedRect，转换为画布局部坐标、留笔缘余量、合并并裁剪后按 DPR 传给 Android。无新脏区时不因 viewport/cache 变化重复整幅呈现；新笔期间跳过的脏区留给下一次完成交接。
+- 新增默认映射/前景抑制/提交压力和脏区回归，开启实验标记的 11 项测试通过。该变化的真实压力轮廓、全刷次数和连续书写仍待安装复验。
+- 新增真实 ElementsCreated/追踪 PenHandler 回归：在 renderer 已插入后只回调一次，压力 [0.2,0.8] 保持，只调用一次 native present，一次 undo 移除整笔。普通与开启实验标记均通过。
+- 全量 `flutter test --no-pub`：114 项通过。
+- 第二轮 APK SHA256：`303B863DA057B7A45B9438A11E27F3C390460FADE41A30F5FA630EC881D2E530`，已覆盖安装。设备曾自动息屏，唤醒后新建浅色空白画布。
+- 01:28:41.817 Android `Native fixed-width preview started`，01:28:41.818 Flutter `prepared=true`（PID 27575），crash buffer 为空。
+- 已请用户再次轻—重—轻和连续约十笔，对照最终压力外观、流畅度与整屏闪烁频率；尚未将本轮局部呈现的视觉效果判为通过。

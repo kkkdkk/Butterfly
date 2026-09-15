@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Map;
 
 import io.flutter.embedding.android.FlutterActivity;
@@ -139,7 +140,14 @@ public class MainActivity extends FlutterActivity {
                                 }
                                 invokeNativeInkAsync(nativeInkPrepare, call.arguments, result);
                             } else if (call.method.equals("present")) {
-                                invokeNativeInkAsync(nativeInkPresent, result);
+                                if (call.arguments != null && !(call.arguments instanceof Map)) {
+                                    result.success(false);
+                                    return;
+                                }
+                                Map<?, ?> arguments = call.arguments == null
+                                        ? Collections.emptyMap()
+                                        : (Map<?, ?>) call.arguments;
+                                invokeNativeInkAsync(nativeInkPresent, arguments, result);
                             } else if (call.method.equals("dispose")) {
                                 result.success(invokeNativeInkBoolean(nativeInkDispose));
                             } else {
@@ -161,7 +169,8 @@ public class MainActivity extends FlutterActivity {
                     .newInstance(this);
             nativeInkPrepare = controllerClass.getMethod(
                     "prepare", Map.class, MethodChannel.Result.class);
-            nativeInkPresent = controllerClass.getMethod("present", MethodChannel.Result.class);
+            nativeInkPresent = controllerClass.getMethod(
+                    "present", Map.class, MethodChannel.Result.class);
             nativeInkDispose = controllerClass.getMethod("dispose");
             nativeInkMotionEvent = controllerClass.getMethod("onMotionEvent", MotionEvent.class);
         } catch (ClassNotFoundException ignored) {

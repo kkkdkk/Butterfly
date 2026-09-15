@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -10,6 +12,16 @@ class NativeInkSession {
   bool active = false;
   int _generation = 0;
   bool _presentQueued = false;
+  Rect? _dirty;
+  Size _viewportSize = Size.zero;
+  double _dpr = 1;
+
+  void addDirty(Rect canvasRect) {
+    if (!active || !canvasRect.isFinite) return;
+    final clipped = canvasRect.intersect(Offset.zero & _viewportSize);
+    if (clipped.isEmpty) return;
+    _dirty = _dirty?.expandToInclude(clipped) ?? clipped;
+  }
 
   Future<bool> _invoke(String method, [Map<String, double>? args]) async {
     try {
@@ -23,6 +35,9 @@ class NativeInkSession {
   Future<bool> prepare(Rect rect, double dpr) async {
     final generation = ++_generation;
     active = false;
+    _dirty = null;
+    _viewportSize = rect.size;
+    _dpr = dpr;
     if (rect.isEmpty || !rect.isFinite || !dpr.isFinite || dpr <= 0) {
       await _invoke('dispose');
       return false;
@@ -43,12 +58,13 @@ class NativeInkSession {
   Future<void> dispose() async {
     ++_generation;
     active = false;
+    _dirty = null;
     await _invoke('dispose');
   }
 
   /// Called only once final renderers exist, never from native pen callbacks.
   Future<void> presentAfterFrame({bool Function()? isReady}) async {
-    if (!active || _presentQueued) return;
+    if (!active || _presentQueued || _dirty == null) return;
     final generation = _generation;
     _presentQueued = true;
     try {
@@ -56,10 +72,21 @@ class NativeInkSession {
       if (!active || generation != _generation || !(isReady?.call() ?? true)) {
         return;
       }
-      final presented = await _invoke('present');
+      final dirty = _dirty;
+      if (dirty == null) return;
+      _dirty = null;
+      final presented = await _invoke('present', {
+        'left': dirty.left * _dpr,
+        'top': dirty.top * _dpr,
+        'width': dirty.width * _dpr,
+        'height': dirty.height * _dpr,
+      });
       if (generation == _generation && !presented) active = false;
     } finally {
       _presentQueued = false;
+      if (active && _dirty != null && (isReady?.call() ?? true)) {
+        unawaited(presentAfterFrame(isReady: isReady));
+      }
     }
   }
 }

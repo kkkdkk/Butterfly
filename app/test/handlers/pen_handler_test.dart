@@ -129,20 +129,27 @@ void main() {
 
     expect(handler.elements[1], isNot(same(firstPointElement)));
     final state = bloc.state as DocumentLoadSuccess;
-    final foreground = handler
+    final foregrounds = handler
         .createForegrounds(
           currentIndexCubit,
           state.data,
           state.page,
           state.info,
         )
-        .whereType<PenRenderer>()
-        .single;
-    expect(foreground.element.points, const [
+        .whereType<PenRenderer>();
+    if (NativeInkSession.experiment) {
+      expect(
+        foregrounds,
+        isEmpty,
+        reason: 'Native ink must not repaint the live Flutter foreground',
+      );
+    } else {
+      expect(foregrounds.single.element.points, handler.elements[1]!.points);
+    }
+    expect(handler.elements[1]!.points, const [
       PathPoint(10, 20, 0.5),
       PathPoint(40, 20, 0.75),
     ]);
-    expect(foreground.shouldSimulatePressure(), isTrue);
     handler.addPoint(
       buildContext!,
       1,

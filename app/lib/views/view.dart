@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../view_painter.dart';
+import '../helpers/native_ink.dart';
 import 'native_ink.dart';
 
 const kFallbackSecondaryStylusButton = 0x20;
@@ -997,7 +998,9 @@ class _MainViewViewportState extends State<MainViewViewport>
                 CustomPaint(
                   size: Size.infinite,
                   foregroundPainter: ForegroundPainter(
-                    currentIndex.getAllForegrounds(),
+                    NativeInkSession.instance.active
+                        ? const []
+                        : currentIndex.getAllForegrounds(),
                     state.data,
                     state.page,
                     state.info,

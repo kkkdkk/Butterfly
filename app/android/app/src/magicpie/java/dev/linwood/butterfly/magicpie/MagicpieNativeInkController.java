@@ -6,6 +6,7 @@ import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.PixelCopy;
@@ -38,12 +39,14 @@ public final class MagicpieNativeInkController {
 
     private HandWritingNative nativeInk;
     private Rect eligibleScreenRect;
+    private Rect deferredDirtyRect;
     private SurfaceView flutterSurfaceView;
     private MethodChannel.Result pendingResult;
     private int generation;
     private boolean initialized;
     private boolean started;
     private boolean penDown;
+    private boolean ordinaryStylusDown;
 
     private int androidDownCount;
     private int androidMoveCount;
@@ -88,36 +91,44 @@ public final class MagicpieNativeInkController {
 
         int operation = beginOperation(result);
         eligibleScreenRect = target.screenRect;
+        deferredDirtyRect = null;
         flutterSurfaceView = target.surfaceView;
         captureSurface(target, operation, bitmap -> startWithBackground(operation, bitmap));
     }
 
     /** Refreshes the native background after Flutter has committed its document frame. */
-    public void present(MethodChannel.Result result) {
+    public void present(Map<?, ?> arguments, MethodChannel.Result result) {
         if (!isActivityReady()) {
             dispose();
             result.success(false);
             return;
         }
-        if (!started || nativeInk == null || eligibleScreenRect == null
+        if (!initialized || nativeInk == null || eligibleScreenRect == null
                 || flutterSurfaceView == null) {
             result.success(false);
             return;
         }
+        Rect dirtyRect = parsePresentRect(arguments);
+        if (dirtyRect == null) {
+            result.success(false);
+            return;
+        }
+        if (deferredDirtyRect != null) dirtyRect.union(deferredDirtyRect);
         if (penDown) {
-            // Dart will request another handoff after pending and active ink is idle.
-            // Acknowledging this skip avoids clearing a newer stroke with an older frame.
+            deferredDirtyRect = dirtyRect;
             result.success(true);
             return;
         }
+        deferredDirtyRect = null;
         int operation = beginOperation(result);
-        presentNow(operation);
+        presentNow(operation, dirtyRect);
     }
 
     /** Stops and destroys native state. A later restart requires an explicit prepare call. */
     public boolean dispose() {
         invalidatePendingOperation();
         eligibleScreenRect = null;
+        deferredDirtyRect = null;
         flutterSurfaceView = null;
         return shutdownNativeSession();
     }
@@ -142,6 +153,12 @@ public final class MagicpieNativeInkController {
                     && eligibleScreenRect != null
                     && eligibleScreenRect.contains(
                     Math.round(event.getRawX()), Math.round(event.getRawY()));
+            ordinaryStylusDown = eligibleStylus;
+            Log.i(TAG, "DOWN state stylus=" + (toolType == MotionEvent.TOOL_TYPE_STYLUS ? 1 : 0)
+                    + " eligible=" + (eligibleStylus ? 1 : 0)
+                    + " initialized=" + (initialized ? 1 : 0)
+                    + " started=" + (started ? 1 : 0)
+                    + " capturePending=" + (pendingResult != null ? 1 : 0));
             if (!eligibleStylus) {
                 stopForInputExclusion("ineligible down");
             } else if (pendingResult != null) {
@@ -156,10 +173,15 @@ public final class MagicpieNativeInkController {
         }
 
         if (stylusLike && action == MotionEvent.ACTION_UP) {
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS && ordinaryStylusDown) {
+                stopNativeForFlutterFrame();
+            }
             penDown = false;
-            logStrokeAudit();
+            ordinaryStylusDown = false;
+            logStrokeAudit(event);
         } else if (stylusLike && action == MotionEvent.ACTION_CANCEL) {
             penDown = false;
+            ordinaryStylusDown = false;
             stopForInputExclusion("stylus cancel");
         }
     }
@@ -235,6 +257,43 @@ public final class MagicpieNativeInkController {
 
     private boolean positive(Double value) {
         return value != null && value > 0 && Double.isFinite(value);
+    }
+
+    private Rect parsePresentRect(Map<?, ?> arguments) {
+        boolean hasLeft = arguments.containsKey("left");
+        boolean hasTop = arguments.containsKey("top");
+        boolean hasWidth = arguments.containsKey("width");
+        boolean hasHeight = arguments.containsKey("height");
+        if (!hasLeft && !hasTop && !hasWidth && !hasHeight) {
+            return new Rect(0, 0, eligibleScreenRect.width(), eligibleScreenRect.height());
+        }
+        if (!(hasLeft && hasTop && hasWidth && hasHeight)) {
+            return null;
+        }
+
+        Double left = number(arguments.get("left"));
+        Double top = number(arguments.get("top"));
+        Double width = number(arguments.get("width"));
+        Double height = number(arguments.get("height"));
+        if (left == null || top == null || !positive(width) || !positive(height)) {
+            return null;
+        }
+        double right = left + width;
+        double bottom = top + height;
+        if (!Double.isFinite(right) || !Double.isFinite(bottom)) {
+            return null;
+        }
+
+        int viewportWidth = eligibleScreenRect.width();
+        int viewportHeight = eligibleScreenRect.height();
+        int clippedLeft = Math.max(0, Math.min(viewportWidth, (int) Math.floor(left)));
+        int clippedTop = Math.max(0, Math.min(viewportHeight, (int) Math.floor(top)));
+        int clippedRight = Math.max(0, Math.min(viewportWidth, (int) Math.ceil(right)));
+        int clippedBottom = Math.max(0, Math.min(viewportHeight, (int) Math.ceil(bottom)));
+        if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) {
+            return null;
+        }
+        return new Rect(clippedLeft, clippedTop, clippedRight, clippedBottom);
     }
 
     private View findFlutterView(View view) {
@@ -356,21 +415,23 @@ public final class MagicpieNativeInkController {
         }
     }
 
-    private void presentNow(int operation) {
+    private void presentNow(int operation, Rect dirtyRect) {
         if (operation != generation || pendingResult == null || penDown
-                || nativeInk == null || !initialized || !started
+                || nativeInk == null || !initialized
                 || eligibleScreenRect == null || flutterSurfaceView == null) {
             finishOperation(operation, false);
             return;
         }
-        try {
-            nativeInk.stop();
-            started = false;
-        } catch (Throwable error) {
-            Log.w(TAG, "Native preview stop failed", error);
-            shutdownNativeSession();
-            finishOperation(operation, false);
-            return;
+        if (started) {
+            try {
+                nativeInk.stop();
+                started = false;
+            } catch (Throwable error) {
+                Log.w(TAG, "Native preview stop failed", error);
+                shutdownNativeSession();
+                finishOperation(operation, false);
+                return;
+            }
         }
 
         int[] surfaceLocation = new int[2];
@@ -382,10 +443,11 @@ public final class MagicpieNativeInkController {
                 eligibleScreenRect.bottom - surfaceLocation[1]);
         CaptureTarget target = new CaptureTarget(
                 flutterSurfaceView, new Rect(eligibleScreenRect), sourceRect);
-        captureSurface(target, operation, bitmap -> applyPresentedBackground(operation, bitmap));
+        captureSurface(target, operation,
+                bitmap -> applyPresentedBackground(operation, bitmap, dirtyRect));
     }
 
-    private void applyPresentedBackground(int operation, Bitmap bitmap) {
+    private void applyPresentedBackground(int operation, Bitmap bitmap, Rect dirtyRect) {
         retainedSetupBitmaps.add(bitmap);
         try {
             if (!isActivityReady() || penDown || operation != generation || pendingResult == null) {
@@ -395,7 +457,6 @@ public final class MagicpieNativeInkController {
                 finishOperation(operation, false);
                 return;
             }
-            nativeInk.clear();
             if (!nativeInk.setup(bitmap)) {
                 shutdownNativeSession();
                 finishOperation(operation, false);
@@ -406,8 +467,15 @@ public final class MagicpieNativeInkController {
             started = nativeInk.start();
             if (!started) {
                 shutdownNativeSession();
+                finishOperation(operation, false);
+                return;
             }
-            finishOperation(operation, started);
+            nativeInk.renderRect(dirtyRect);
+            Log.i(TAG, "Presented local rect left=" + dirtyRect.left
+                    + " top=" + dirtyRect.top
+                    + " right=" + dirtyRect.right
+                    + " bottom=" + dirtyRect.bottom);
+            finishOperation(operation, true);
         } catch (Throwable error) {
             Log.w(TAG, "Native preview handoff failed; Flutter remains active", error);
             shutdownNativeSession();
@@ -422,6 +490,23 @@ public final class MagicpieNativeInkController {
         Log.i(TAG, "Native preview stopped: " + reason);
         invalidatePendingOperation();
         shutdownNativeSession();
+    }
+
+    private void stopNativeForFlutterFrame() {
+        if (nativeInk == null || !initialized) {
+            return;
+        }
+        if (started) {
+            try {
+                nativeInk.stop();
+                started = false;
+            } catch (Throwable error) {
+                Log.w(TAG, "Native preview stop failed at stylus up", error);
+                shutdownNativeSession();
+                return;
+            }
+        }
+        Log.i(TAG, "Native preview awaiting Flutter frame; initialized=1 started=0");
     }
 
     private int beginOperation(MethodChannel.Result result) {
@@ -557,10 +642,11 @@ public final class MagicpieNativeInkController {
         }
     }
 
-    private void logStrokeAudit() {
+    private void logStrokeAudit(MotionEvent event) {
+        long eventLagMs = Math.max(0L, SystemClock.uptimeMillis() - event.getEventTime());
         synchronized (pressureLock) {
             Log.i(TAG, String.format(Locale.US,
-                    "Stroke audit down=%d move=%d up=%d history=%d "
+                    "UP stats down=%d move=%d up=%d history=%d eventLagMs=%d "
                             + "androidPressureSamples=%d androidPressureMin=%s androidPressureMax=%s "
                             + "nativeValidPressureSamples=%d nativePressureMin=%s nativePressureMax=%s "
                             + "fixedWidthPreview=1 pressureRenderingVerified=0",
@@ -568,6 +654,7 @@ public final class MagicpieNativeInkController {
                     androidMoveCount,
                     androidUpCount,
                     androidHistoryCount,
+                    eventLagMs,
                     androidPressureSamples,
                     pressureValue(androidPressureSamples, androidPressureMin),
                     pressureValue(androidPressureSamples, androidPressureMax),

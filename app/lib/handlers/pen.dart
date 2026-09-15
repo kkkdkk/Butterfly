@@ -32,14 +32,17 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
     DocumentPage page,
     DocumentInfo info, [
     Area? currentArea,
-  ]) => [...elements.values, ..._submittedElements]
-      .map(
-        (e) => e.points.length > 1
-            ? PenRenderer(e.copyWith(id: createUniqueId()))
-            : null,
-      )
-      .whereType<Renderer>()
-      .toList();
+  ]) =>
+      (NativeInkSession.instance.active
+              ? const <PenElement>[]
+              : [...elements.values, ..._submittedElements])
+          .map(
+            (e) => e.points.length > 1
+                ? PenRenderer(e.copyWith(id: createUniqueId()))
+                : null,
+          )
+          .whereType<Renderer>()
+          .toList();
 
   // Reset the input for the handler.
   @override
@@ -121,9 +124,26 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
         .toSet();
     if (createdIds.isEmpty) return false;
     final previousLength = _submittedElements.length;
+    final completedIds = _submittedElements
+        .where((element) => createdIds.contains(element.id))
+        .map((element) => element.id)
+        .toSet();
     _submittedElements.removeWhere((e) => createdIds.contains(e.id));
     final changed = previousLength != _submittedElements.length;
     if (changed && NativeInkSession.experiment) {
+      final transform = _bloc?.currentIndexCubit.state.transformCubit.state;
+      if (transform != null && NativeInkSession.instance.active) {
+        for (final renderer in renderers.whereType<PenRenderer>()) {
+          if (!completedIds.contains(renderer.element.id)) continue;
+          final rect = renderer.expandedRect;
+          NativeInkSession.instance.addDirty(
+            Rect.fromPoints(
+              transform.globalToLocal(rect.topLeft),
+              transform.globalToLocal(rect.bottomRight),
+            ).inflate(4),
+          );
+        }
+      }
       debugPrint(
         'MagicpieInk renderer committed count=${previousLength - _submittedElements.length}',
       );
@@ -133,7 +153,10 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
         ),
       );
     }
-    if (changed && _submittedElements.isEmpty && elements.isEmpty) {
+    if (changed &&
+        _submittedElements.isEmpty &&
+        elements.isEmpty &&
+        !NativeInkSession.instance.active) {
       unawaited(_bloc?.delayedBake());
     }
     return changed;
@@ -144,6 +167,9 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
     CameraViewport currentViewport,
     CameraViewport newViewport,
   ) async {
+    // In native mode, completion belongs to the post-insertion renderer hook.
+    // Clearing here runs synchronously during addUnbaked, before that hook.
+    if (NativeInkSession.instance.active) return;
     if (_submittedElements.isEmpty) return;
     if (_currentlyBaking) return;
     _currentlyBaking = true;
@@ -219,7 +245,7 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
         points: points,
       );
     }
-    if (refresh) {
+    if (refresh && !NativeInkSession.instance.active) {
       unawaited(
         delayedRefresh
             ? bloc.delayedRefreshForegrounds()
