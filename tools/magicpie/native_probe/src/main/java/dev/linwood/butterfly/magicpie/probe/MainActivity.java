@@ -98,6 +98,9 @@ public final class MainActivity extends Activity {
                     showStatus("Native init/setup failed: init=" + initOk + ", setup=" + setupOk);
                     return;
                 }
+                // Required by the installed Magicpie system library to enable
+                // the active native brush. Confirmed by on-device A/B.
+                nativeInk.setBrush(4, 0, true);
             }
             started = nativeInk.start();
             if (!started) {
