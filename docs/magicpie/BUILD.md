@@ -9,7 +9,7 @@
 - Android SDK：`D:\code\works\butterfly-magicpie-toolchain\android-sdk`
 - Rust/Cargo：必须已在 `PATH` 中（原生依赖需要时使用）
 
-脚本只为当前进程设置 SDK/JDK 环境变量，不调用 `flutter config`，也不修改全局 SDK 配置。Pub 与 Gradle 缓存默认位于 `D:\code\works\butterfly-magicpie-toolchain`；传入 `-CacheRoot` 时改用该目录下的 `pub` 和 `gradle` 子目录。Flutter/Gradle 可能在本地生成未提交的 `app/android/local.properties`。
+脚本只为当前进程设置 SDK/JDK 环境变量，不调用 `flutter config`，也不修改全局 SDK 配置。除了 `JAVA_HOME`，脚本还通过进程级 `GRADLE_OPTS=-Dorg.gradle.java.home=...` 指定 Gradle daemon 的 JDK；这是因为 Flutter 可能优先选择 Android Studio 自带的 JBR。Pub 与 Gradle 缓存默认位于 `D:\code\works\butterfly-magicpie-toolchain`；传入 `-CacheRoot` 时改用该目录下的 `pub` 和 `gradle` 子目录。Flutter/Gradle 可能在本地生成未提交的 `app/android/local.properties`。
 
 ## 构建
 
@@ -29,7 +29,7 @@
   -CacheRoot 'D:\build-cache\butterfly-magicpie'
 ```
 
-脚本依次执行 `flutter pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。脚本仅在当前进程中设置 `FLUTTER_WINDOWS=false` 和 `FLUTTER_LINUX=false`，避免 Android-only 构建为未使用的桌面插件创建符号链接，因此不要求启用 Windows Developer Mode。所有临时环境变量在成功或失败后都会恢复，且不会改写 Flutter 的全局配置。构建使用 `--no-pub` 避免重复解析依赖。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
+脚本依次执行 `flutter pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。脚本仅在当前进程中设置 `FLUTTER_WINDOWS=false` 和 `FLUTTER_LINUX=false`，避免 Android-only 构建为未使用的桌面插件创建符号链接，因此当前配置不要求启用 Windows Developer Mode。Flutter 的项目级或全局 `enable-windows-desktop` / `enable-linux-desktop` 显式配置优先于环境变量；若它们被显式开启，需先移除该覆盖或启用 Windows Developer Mode。所有临时环境变量在成功或失败后都会恢复，且不会改写 Flutter 的全局配置。构建使用 `--no-pub` 避免重复解析依赖。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
 
 预期产物：
 
