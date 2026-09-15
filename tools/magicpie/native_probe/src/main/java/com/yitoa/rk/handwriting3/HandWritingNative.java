@@ -61,10 +61,6 @@ public final class HandWritingNative {
         native_handwriting_clear(nativePointer);
     }
 
-    public void setBrush(int width, int color, boolean enabled) {
-        native_handwriting_render_brush_color(nativePointer, width, color, enabled);
-    }
-
     public void destroy() {
         native_handwriting_destroy(nativePointer);
     }

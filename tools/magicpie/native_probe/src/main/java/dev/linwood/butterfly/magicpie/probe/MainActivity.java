@@ -98,8 +98,6 @@ public final class MainActivity extends Activity {
                     showStatus("Native init/setup failed: init=" + initOk + ", setup=" + setupOk);
                     return;
                 }
-                // The vendor manager maps Android black to palette index zero.
-                nativeInk.setBrush(4, 0, true);
             }
             started = nativeInk.start();
             if (!started) {
