@@ -21,6 +21,9 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
 
   PenHandler(super.data);
 
+  bool get hasPendingInk =>
+      elements.isNotEmpty || _submittedElements.isNotEmpty;
+
   // Create foregrounds for rendering the PenRendere
   @override
   List<Renderer> createForegrounds(
@@ -92,6 +95,15 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
         .nonNulls
         .toList();
     if (elements.isEmpty) return;
+    if (NativeInkSession.experiment) {
+      for (final element in elements) {
+        final pressures = element.points.map((point) => point.pressure);
+        debugPrint(
+          'MagicpieInk document submit points=${element.points.length} '
+          'pressure=${pressures.reduce(min)}..${pressures.reduce(max)}',
+        );
+      }
+    }
     _submittedElements.addAll(elements);
     lastPosition.removeWhere((key, value) => indexes.contains(key));
     bloc.add(ElementsCreated(elements));
@@ -111,6 +123,16 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
     final previousLength = _submittedElements.length;
     _submittedElements.removeWhere((e) => createdIds.contains(e.id));
     final changed = previousLength != _submittedElements.length;
+    if (changed && NativeInkSession.experiment) {
+      debugPrint(
+        'MagicpieInk renderer committed count=${previousLength - _submittedElements.length}',
+      );
+      unawaited(
+        NativeInkSession.instance.presentAfterFrame(
+          isReady: () => !hasPendingInk,
+        ),
+      );
+    }
     if (changed && _submittedElements.isEmpty && elements.isEmpty) {
       unawaited(_bloc?.delayedBake());
     }

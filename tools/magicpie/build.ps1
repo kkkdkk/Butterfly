@@ -6,7 +6,8 @@ param(
     [string]$CacheRoot,
     [ValidateSet('debug', 'release')]
     [string]$BuildMode = 'release',
-    [switch]$SkipPubGet
+    [switch]$SkipPubGet,
+    [switch]$NativeInkExperiment
 )
 
 $ErrorActionPreference = 'Stop'
@@ -72,6 +73,9 @@ try {
         '--split-per-abi'
     )
     # Flutter 3.44 also skips Android plugin registration with --no-pub.
+    if ($NativeInkExperiment) {
+        $arguments += '--dart-define=magicpieNativeInk=true'
+    }
     # Keep build's normal preparation even when explicit pub get was skipped.
     & $flutter @arguments
     if ($LASTEXITCODE -ne 0) { throw "flutter build apk failed with exit code $LASTEXITCODE" }

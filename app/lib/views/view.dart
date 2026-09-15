@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../view_painter.dart';
+import 'native_ink.dart';
 
 const kFallbackSecondaryStylusButton = 0x20;
 
@@ -911,11 +912,13 @@ class _MainViewViewportState extends State<MainViewViewport>
                                           getEventContext,
                                           changeTemporaryTool,
                                         ),
-                                    child: _buildCanvas(
-                                      currentIndex,
-                                      cubit,
-                                      state,
-                                      delayBake,
+                                    child: NativeInkViewport(
+                                      child: _buildCanvas(
+                                        currentIndex,
+                                        cubit,
+                                        state,
+                                        delayBake,
+                                      ),
                                     ),
                                   ),
                                 );
