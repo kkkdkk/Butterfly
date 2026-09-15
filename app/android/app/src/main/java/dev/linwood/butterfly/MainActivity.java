@@ -98,7 +98,10 @@ public class MainActivity extends FlutterActivity {
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), CHANNEL)
                 .setMethodCallHandler(
                         (call, result) -> {
-                            if (call.method.equals("getIntentType")) {
+                            if (call.method.equals("isMagicPie")) {
+                                result.success(android.os.Build.DEVICE.equals("px30_eink_magicpie")
+                                        || android.os.Build.MODEL.equalsIgnoreCase("Magicpie M1"));
+                            } else if (call.method.equals("getIntentType")) {
                                 result.success(intentType);
                             } else if (call.method.equals("getIntentData")) {
                                 result.success(intentData);

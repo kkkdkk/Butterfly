@@ -154,14 +154,14 @@ class PenRenderer extends Renderer<PenElement> {
 
     if (property.fill.a > 0 && _cachedFillPath != null) {
       final paint = Paint()
-        ..color = property.fill.toColor()
+        ..color = EinkDisplay.ink(property.fill.toColor())
         ..style = PaintingStyle.fill
         ..strokeCap = StrokeCap.round;
       canvas.drawPath(_cachedFillPath!, paint);
     }
     if (property.color.a > 0 && _cachedStrokePath != null) {
       final paint = Paint()
-        ..color = property.color.toColor()
+        ..color = EinkDisplay.ink(property.color.toColor())
         ..style = PaintingStyle.fill
         ..strokeCap = StrokeCap.round;
       canvas.drawPath(_cachedStrokePath!, paint);

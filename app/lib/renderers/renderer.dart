@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../helpers/eink.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' as ui;

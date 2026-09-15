@@ -1404,6 +1404,7 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
     final canvas = ui.Canvas(recorder)..scale(ratio);
 
     ViewPainter(
+      einkDisplay: true,
       document,
       page,
       info,
@@ -1465,6 +1466,7 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
       }
 
       ViewPainter(
+        einkDisplay: true,
         document,
         page,
         info,
@@ -1481,6 +1483,7 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
         invisibleLayers: invisibleLayers,
       ).paint(belowLayerCanvas, size);
       ViewPainter(
+        einkDisplay: true,
         document,
         page,
         info,

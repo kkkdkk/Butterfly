@@ -4,6 +4,7 @@ import 'package:material_leap/material_leap.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../bloc/document_bloc.dart';
+import '../helpers/eink.dart';
 import '../dialogs/packs/color_pick.dart';
 
 class ColorField extends StatelessWidget {
@@ -31,6 +32,7 @@ class ColorField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (EinkDisplay.enabled) return const SizedBox.shrink();
     return ListTile(
       onTap: () async {
         onOpen?.call();

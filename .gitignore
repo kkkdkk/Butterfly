@@ -7,6 +7,8 @@
 .zed
 
 # Temporary files
+.worktrees/
+.magicpie-output/
 docs_old/
 ./snap/
 

@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'helpers/eink.dart';
 
 import 'package:butterfly/cubits/current_index.dart';
 import 'package:butterfly/cubits/settings.dart';
@@ -37,6 +38,10 @@ class ForegroundPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    EinkDisplay.paint(true, () => paintDisplay(canvas, size));
+  }
+
+  void paintDisplay(Canvas canvas, Size size) {
     final sel = selection;
     if (renderers.isEmpty && sel == null) return;
     canvas.scale(transform.size);
@@ -105,6 +110,7 @@ class ForegroundPainter extends CustomPainter {
 }
 
 class ViewPainter extends CustomPainter {
+  final bool einkDisplay;
   final NoteData document;
   final DocumentPage page;
   final DocumentInfo info;
@@ -120,6 +126,7 @@ class ViewPainter extends CustomPainter {
     this.page,
     this.info, {
     this.currentArea,
+    this.einkDisplay = false,
     this.invisibleLayers,
     this.renderBackground = true,
     this.renderBaked = true,
@@ -131,6 +138,10 @@ class ViewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    EinkDisplay.paint(einkDisplay, () => paintDisplay(canvas, size));
+  }
+
+  void paintDisplay(Canvas canvas, Size size) {
     var areaRect = currentArea?.rect;
     if (areaRect != null) {
       areaRect = Rect.fromPoints(

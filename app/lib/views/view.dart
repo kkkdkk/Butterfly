@@ -1004,6 +1004,7 @@ class _MainViewViewportState extends State<MainViewViewport>
                     state.settingsCubit.state.navigatorPosition,
                   ),
                   painter: ViewPainter(
+                    einkDisplay: true,
                     state.data,
                     state.page,
                     state.info,

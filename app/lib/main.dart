@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'helpers/eink.dart';
 
 import 'package:args/args.dart';
 import 'package:butterfly/api/close.dart';
@@ -51,6 +52,7 @@ const platform = MethodChannel('linwood.dev/butterfly');
 
 Future<void> main([List<String> args = const []]) async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EinkDisplay.initialize();
   initLogger();
   await rotatePersistedLogs();
   talker.info('App started');
@@ -421,7 +423,7 @@ class ButterflyApp extends StatelessWidget {
           );
         },
         supportedLocales: getLocales(),
-        themeMode: state.theme,
+        themeMode: EinkDisplay.enabled ? ThemeMode.light : state.theme,
         theme: getThemeData(
           state.design,
           false,

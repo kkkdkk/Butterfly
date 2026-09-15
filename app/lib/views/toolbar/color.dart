@@ -12,6 +12,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:collection/collection.dart';
 
 import '../../bloc/document_bloc.dart';
+import '../../helpers/eink.dart';
 
 enum ColorPickerToolbarAction { delete, pin, eyeDropper }
 
@@ -189,6 +190,22 @@ class _ColorToolbarViewState extends State<ColorToolbarView> {
 
   @override
   Widget build(BuildContext context) {
+    if (EinkDisplay.enabled) {
+      return Row(children: [
+        ...widget.actions,
+        if (widget.strokeWidth != null && widget.onStrokeWidthChanged != null)
+          SizedBox(
+            width: 140,
+            child: NumberInput(
+              value: widget.strokeWidth!,
+              min: 0,
+              step: 0.1,
+              fractionDigits: 1,
+              onChanged: widget.onStrokeWidthChanged,
+            ),
+          ),
+      ]);
+    }
     final state = context.read<DocumentBloc>().state;
     if (state is! DocumentLoadSuccess) return const SizedBox.shrink();
     SRGBColor color = widget.color.withValues(a: 255);

@@ -2,6 +2,7 @@ import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 
 import 'main.dart';
+import 'helpers/eink.dart';
 
 const kClassicFirstColor = Color(0xFFc4840d);
 const kClassicSecondColor = Color(0xFF7b8f96);
@@ -37,7 +38,14 @@ ThemeData getThemeData(
   ColorScheme? overridden,
   bool highContrast = false,
 ]) {
-  final color = getFlexThemeColor(name, dark);
+  if (EinkDisplay.enabled) {
+    dark = false;
+    highContrast = true;
+    overridden = null;
+  }
+  final color = EinkDisplay.enabled
+      ? const FlexSchemeColor(primary: Colors.black, secondary: Colors.black)
+      : getFlexThemeColor(name, dark);
   final override = overridden != null && name.isEmpty;
   ThemeData theme;
   if (dark) {
