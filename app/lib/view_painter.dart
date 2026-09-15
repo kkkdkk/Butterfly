@@ -16,6 +16,14 @@ import 'package:material_leap/material_leap.dart';
 import 'cubits/transform.dart';
 import 'selections/selection.dart';
 
+Color _pagePaperColor(DocumentPage page) {
+  var color = Colors.white;
+  for (final background in page.backgrounds.whereType<TextureBackground>()) {
+    color = Color.alphaBlend(background.defaultColor.toColor(), color);
+  }
+  return color;
+}
+
 class ForegroundPainter extends CustomPainter {
   final ColorScheme colorScheme;
   final NoteData document;
@@ -40,9 +48,7 @@ class ForegroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     EinkDisplay.paint(true, () {
-      EinkDisplay.preparePaper(
-        page.backgrounds.lastOrNull?.defaultColor.toColor() ?? Colors.white,
-      );
+      EinkDisplay.preparePaper(_pagePaperColor(page));
       paintDisplay(canvas, size);
     });
   }
@@ -145,9 +151,7 @@ class ViewPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     EinkDisplay.paint(einkDisplay, () {
-      EinkDisplay.preparePaper(
-        page.backgrounds.lastOrNull?.defaultColor.toColor() ?? Colors.white,
-      );
+      EinkDisplay.preparePaper(_pagePaperColor(page));
       paintDisplay(canvas, size);
     });
   }

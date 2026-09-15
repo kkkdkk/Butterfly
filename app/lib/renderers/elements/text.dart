@@ -49,10 +49,27 @@ abstract class GenericTextRenderer<T extends LabelElement> extends Renderer<T> {
   text.TextStyleSheet? _getStyle() => element.styleSheet?.item;
 
   TextStyle _displayStyle(TextStyle style) {
+    if (!EinkDisplay.isPainting) return style;
     final color = style.color;
-    return color == null
-        ? style
-        : style.copyWith(color: EinkDisplay.ink(color));
+    final background = style.backgroundColor;
+    final hasBackground = background != null && background.a > 0;
+    final darkBackground =
+        hasBackground && background.computeLuminance() < 0.5;
+    Color? foreground(Color? value) {
+      if (value == null || value.a == 0) return value;
+      if (!hasBackground) return EinkDisplay.ink(value);
+      return (darkBackground ? Colors.white : Colors.black)
+          .withValues(alpha: value.a);
+    }
+
+    return style.copyWith(
+      color: foreground(color),
+      decorationColor: foreground(style.decorationColor),
+      backgroundColor: background == null || background.a == 0
+          ? background
+          : (darkBackground ? Colors.black : Colors.white)
+              .withValues(alpha: background.a),
+    );
   }
 
   InlineSpan _displaySpan(InlineSpan span) {
