@@ -12,7 +12,8 @@ import 'package:butterfly/services/asset.dart';
 import 'package:butterfly/view_painter.dart';
 import 'package:butterfly_api/butterfly_api.dart';
 import 'package:butterfly_api/butterfly_text.dart' as text;
-import 'package:flutter/material.dart' show ColorScheme, CustomPainter, TextSpan;
+import 'package:flutter/material.dart'
+    show ColorScheme, CustomPainter, TextSpan;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_leap/material_leap.dart';
 
@@ -307,10 +308,7 @@ void main() {
       );
 
       final originalSpan = renderer.span as TextSpan;
-      expect(
-        originalSpan.style?.backgroundColor,
-        const ui.Color(0x800000FF),
-      );
+      expect(originalSpan.style?.backgroundColor, const ui.Color(0x800000FF));
       final display = await _renderColors(renderer, display: true);
       final exported = await _renderColors(renderer, display: false);
       expect(display, isNotEmpty);
@@ -365,6 +363,47 @@ void main() {
     renderer.dispose();
     transformCubit.close();
   });
+
+  test(
+    'low-alpha dark inline background keeps black glyph on light paper',
+    () async {
+      EinkDisplay.enabled = true;
+      final renderer = TextRenderer(
+        TextElement(
+          foreground: const SRGBColor(0xFFFF0000),
+          area: const text.TextArea(
+            paragraph: text.TextParagraph(
+              property: text.ParagraphProperty.defined(
+                span: text.DefinedSpanProperty(
+                  size: 24,
+                  backgroundColor: SRGBColor(0x0D000000),
+                ),
+              ),
+              textSpans: [text.InlineSpan.text(text: 'M')],
+            ),
+          ),
+        ),
+      );
+      final transformCubit = TransformCubit(1);
+      await renderer.setup(
+        transformCubit,
+        NoteData(Archive()),
+        AssetService(),
+        const DocumentPage(),
+      );
+
+      final display = await _renderColors(renderer, display: true);
+      expect(
+        display.any(
+          (color) =>
+              color.a > .5 && color.r < .1 && color.g < .1 && color.b < .1,
+        ),
+        isTrue,
+      );
+      renderer.dispose();
+      transformCubit.close();
+    },
+  );
 
   test('imported image pixels are not mapped by display ink scope', () async {
     EinkDisplay.enabled = true;
