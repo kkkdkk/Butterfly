@@ -151,6 +151,10 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
   StreamSubscription? _transformSubscription;
   Timer? _transformDebounceTimer;
   var _isClosing = false;
+  final _foregroundRefreshRunner = CoalescedAsyncRunner(delay: Duration.zero);
+  final _delayedForegroundRefreshRunner = CoalescedAsyncRunner(
+    delay: const Duration(milliseconds: 16),
+  );
   static const _listEquality = ListEquality<Renderer<PadElement>>();
 
   void _onTransformChanged(CameraTransform transform) {
@@ -712,6 +716,7 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
     DocumentLoaded blocState, {
     bool allowBake = true,
   }) async {
+    _delayedForegroundRefreshRunner.cancel();
     talker.verbose('Refreshing CurrentIndexCubit');
     final document = blocState.data;
     final page = blocState.page;
@@ -828,8 +833,20 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
 
   /// Lightweight refresh that only updates foregrounds without rebaking.
   /// Use this when handler internal state changes but document hasn't changed.
-  Future<void> refreshForegrounds(DocumentLoaded blocState) async {
-    if (isClosed) return;
+  Future<void> refreshForegrounds(DocumentLoaded blocState) {
+    _delayedForegroundRefreshRunner.cancel();
+    return _foregroundRefreshRunner.schedule(
+      () => _refreshForegrounds(blocState),
+    );
+  }
+
+  Future<void> delayedRefreshForegrounds(DocumentLoaded blocState) =>
+      _delayedForegroundRefreshRunner.schedule(
+        () => _refreshForegrounds(blocState),
+      );
+
+  Future<void> _refreshForegrounds(DocumentLoaded blocState) async {
+    if (isClosed || _isClosing) return;
     final document = blocState.data;
     final page = blocState.page;
     final info = blocState.info;
@@ -2055,6 +2072,7 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
   }
 
   Future<void> resetInput(DocumentBloc bloc) async {
+    _delayedForegroundRefreshRunner.cancel();
     await state.handler.resetInput(bloc);
     emit(state.copyWith(buttons: null, pointers: []));
   }
@@ -2550,6 +2568,8 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
   @override
   Future<void> close() async {
     _isClosing = true;
+    await _foregroundRefreshRunner.disposeAndWait();
+    await _delayedForegroundRefreshRunner.disposeAndWait();
     final currentState = state;
     _disposeHandlers?.call();
     _documentState = null;

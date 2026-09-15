@@ -144,6 +144,7 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
     PointerDeviceKind kind, {
     bool refresh = true,
     bool shouldCreate = false,
+    bool delayedRefresh = false,
   }) {
     final bloc = context.read<DocumentBloc>();
     final currentIndexCubit = context.read<CurrentIndexCubit>();
@@ -182,6 +183,7 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
         points[0] = points[0].copyWith(pressure: pressure);
       }
       _elementPoints[pointer] = points;
+      elements[pointer] = element.copyWith(points: points);
     } else {
       final points = [point];
       _elementPoints[pointer] = points;
@@ -195,7 +197,13 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
         points: points,
       );
     }
-    if (refresh) bloc.refreshForegrounds();
+    if (refresh) {
+      unawaited(
+        delayedRefresh
+            ? bloc.delayedRefreshForegrounds()
+            : bloc.refreshForegrounds(),
+      );
+    }
   }
 
   // This function is called when the pointer is pressed down.
@@ -247,6 +255,7 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
       context.viewportSize,
       getPressureOfEvent(event),
       event.kind,
+      delayedRefresh: true,
     );
     points.add(event.localPosition);
   }
