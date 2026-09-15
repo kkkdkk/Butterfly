@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:butterfly/cubits/transform.dart';
+import 'package:butterfly/helpers/eink.dart';
 import 'package:butterfly/renderers/renderer.dart';
 import 'package:butterfly_api/butterfly_api.dart';
 import 'package:flutter/material.dart';
@@ -28,14 +29,14 @@ class LassoSelectionForegroundRenderer extends Renderer<List<Offset>> {
     bool foreground = false,
   ]) {
     final paint = Paint()
-      ..color = scheme.primaryContainer
+      ..color = EinkDisplay.ink(scheme.primaryContainer)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4 / transform.size
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
     final fillPaint = Paint()
-      ..color = scheme.primaryContainer.withValues(alpha: 0.2)
+      ..color = EinkDisplay.ink(scheme.primaryContainer.withValues(alpha: 0.2))
       ..style = PaintingStyle.fill;
     final path = Path();
     path.addPolygon(element, true);
@@ -303,7 +304,9 @@ class RectSelectionForegroundRenderer extends Renderer<Rect> {
     );
     if (rect.isEmpty || isTransforming) return;
     final paint = Paint()
-      ..color = colorScheme?.primaryContainer ?? Colors.blueAccent
+      ..color = EinkDisplay.ink(
+        colorScheme?.primaryContainer ?? Colors.blueAccent,
+      )
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4 / transform.size
       ..strokeCap = StrokeCap.round
@@ -322,9 +325,9 @@ class RectSelectionForegroundRenderer extends Renderer<Rect> {
         paint,
       );
     }
-    final color = transformMode == SelectionScaleMode.scaleProp
-        ? Colors.red
-        : Colors.blue;
+    final color = EinkDisplay.ink(
+      transformMode == SelectionScaleMode.scaleProp ? Colors.red : Colors.blue,
+    );
     final transformPaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke

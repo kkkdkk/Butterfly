@@ -231,6 +231,31 @@ class CameraViewport extends Equatable {
     );
   }
 
+  /// Returns a vector-backed viewport suitable for color-faithful export.
+  /// Display caches can be monochrome on e-ink devices and must not be reused.
+  CameraViewport forExport(DocumentPage page) {
+    final available = [...bakedElements, ...unbakedElements];
+    final byId = <String, Renderer<PadElement>>{};
+    for (final renderer in available) {
+      final id = renderer.element.id;
+      if (id != null) byId[id] = renderer;
+    }
+    final ordered = <Renderer<PadElement>>[];
+    for (final element in page.content) {
+      final id = element.id;
+      if (id == null) continue;
+      final renderer = byId.remove(id);
+      if (renderer != null) ordered.add(renderer);
+    }
+    final matched = ordered.toSet();
+    ordered.addAll(available.where((renderer) => !matched.contains(renderer)));
+    return unbake(
+      unbakedElements: ordered,
+      visibleElements: ordered,
+      visibleUnbakedElements: ordered,
+    );
+  }
+
   CameraViewport bake({
     required ui.Image image,
     required double width,

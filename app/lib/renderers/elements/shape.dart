@@ -148,7 +148,7 @@ class ShapeRenderer extends Renderer<ShapeElement> {
   }
 
   Paint _buildPaint({Color? color, PaintingStyle? style}) => Paint()
-    ..color = color ?? element.property.color.toColor()
+    ..color = EinkDisplay.ink(color ?? element.property.color.toColor())
     ..strokeWidth = element.property.strokeWidth
     ..style = style ?? PaintingStyle.stroke
     ..strokeCap = StrokeCap.round

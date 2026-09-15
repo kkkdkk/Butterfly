@@ -11,9 +11,18 @@ import 'package:butterfly_api/butterfly_api.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:material_leap/material_leap.dart';
 
 import 'cubits/transform.dart';
 import 'selections/selection.dart';
+
+Color _pagePaperColor(DocumentPage page) {
+  var color = Colors.white;
+  for (final background in page.backgrounds.whereType<TextureBackground>()) {
+    color = Color.alphaBlend(background.defaultColor.toColor(), color);
+  }
+  return color;
+}
 
 class ForegroundPainter extends CustomPainter {
   final ColorScheme colorScheme;
@@ -38,7 +47,10 @@ class ForegroundPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    EinkDisplay.paint(true, () => paintDisplay(canvas, size));
+    EinkDisplay.paint(true, () {
+      EinkDisplay.preparePaper(_pagePaperColor(page));
+      paintDisplay(canvas, size);
+    });
   }
 
   void paintDisplay(Canvas canvas, Size size) {
@@ -96,7 +108,7 @@ class ForegroundPainter extends CustomPainter {
       RRect.fromRectAndRadius(intersection, const Radius.circular(2)),
       Paint()
         ..style = PaintingStyle.stroke
-        ..color = colorScheme.primary
+        ..color = EinkDisplay.ink(colorScheme.primary)
         ..strokeWidth = 5 / transform.size,
     );
   }
@@ -138,7 +150,10 @@ class ViewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    EinkDisplay.paint(einkDisplay, () => paintDisplay(canvas, size));
+    EinkDisplay.paint(einkDisplay, () {
+      EinkDisplay.preparePaper(_pagePaperColor(page));
+      paintDisplay(canvas, size);
+    });
   }
 
   void paintDisplay(Canvas canvas, Size size) {
@@ -177,12 +192,12 @@ class ViewPainter extends CustomPainter {
     if (areaRect != null) {
       final paint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = colorScheme?.primary ?? Colors.green
+        ..color = EinkDisplay.ink(colorScheme?.primary ?? Colors.green)
         ..strokeWidth = areaSelectionWidth;
       canvas.drawRect(areaRect.inflate(areaSelectionWidth / 2), paint);
       final otherPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = (colorScheme?.secondary ?? Colors.grey)
+        ..color = EinkDisplay.ink(colorScheme?.secondary ?? Colors.grey)
         ..strokeWidth = areaSelectionWidth;
       for (final area in page.areas.sortedBy((a) => a == currentArea ? 1 : 0)) {
         if (areaRect.overlaps(area.rect)) continue;
@@ -279,7 +294,8 @@ class ViewPainter extends CustomPainter {
         cameraViewport != oldDelegate.cameraViewport ||
         !setEquals(invisibleLayers, oldDelegate.invisibleLayers) ||
         currentArea != oldDelegate.currentArea ||
-        colorScheme != oldDelegate.colorScheme;
+        colorScheme != oldDelegate.colorScheme ||
+        einkDisplay != oldDelegate.einkDisplay;
     return shouldRepaint;
   }
 }
