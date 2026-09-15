@@ -1,6 +1,6 @@
 # Butterfly 原生快写集成实验
 
-日期：2026-09-16。状态：默认关闭，等待真机书写/压力/文档交接验收。
+日期：2026-09-16。状态：实验构建已安装、实际原生 start 成功，等待真机书写/压力/文档交接验收。常规构建仍默认关闭。
 
 ## 范围
 
@@ -36,3 +36,13 @@
 3. 用户分别判断书写中和抬笔后粗细、延迟、闪动；两者分开记录，不把固定宽度快写算压力完成。
 4. 一笔撤销/重做、保存重开、连续两笔、旋转/缩放/切页/后台恢复。
 5. 实际电脑 `.bfly` 往返与导出继续依 PLAN-M2；真实云同步仍需用户服务参数。
+
+## 最新装机记录
+
+- 源码：`acbb8aa84`（R8 查找修复，接在 `879a3d5ae` 实验实现后）。
+- APK：`app/build/app/outputs/flutter-apk/app-armeabi-v7a-magicpie-release.apk`。
+- SHA256：`60A5E865BE3A65665181291CB9745D4FAFD405539BDED3FC8EFD94A66BC02BEF`。
+- 覆盖安装 `dev.linwood.butterfly.magicpie` 成功；原版包与探针均保留。
+- 新建浅色空白画布，选择默认笔；01:09:43.954 Android `Native fixed-width preview started`，01:09:43.955 Flutter `MagicpieInk prepared=true`（PID 26974）。
+- 实际 Flutter SurfaceView 捕获、JNI init/setup/brush/start 已运行成功。启动 crash buffer 为空；不等于连续笔画、压力外观或保存后文档显示通过。
+- 已请用户在该画布画轻—重—轻长线，抬笔后不点其他控件，分别核对快写与最终压感轮廓；等待反馈。

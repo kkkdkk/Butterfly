@@ -90,6 +90,6 @@
 - [x] P7.1-P7.4：事实基线、PRD 和 Plan 已形成。
 - [x] P8：73c37e04d 已实现并通过全量 103 项测试、analyze、构建及真机安装；用户反馈仍然很慢，低延迟目标需继续 P9/P10。
 - [ ] P9：快写与 Android 4 笔完整事件通过，20 次生命周期调用及重启无崩溃；视觉恢复/刷新模式未全部验收。只批准 P10 有界实验，见 PROBE-VERIFICATION.md。
-- [ ] P10：Android 与 Dart 实验接入、压力数值日志、`.bfly` 压力往返回归已实现；111 项测试通过。真机已启动，正在复核默认映射修正后的 native start；用户实笔及最终显示交接未通过验收。见 NATIVE-INTEGRATION-VERIFICATION.md。
+- [ ] P10：Android 与 Dart 实验接入、压力数值日志、`.bfly` 压力往返回归已实现；111 项测试通过。01:09:43 真机 Butterfly 画布 native start 与 Flutter prepared=true；等待轻—重—轻实笔、最终显示交接及保存操作验收。见 NATIVE-INTEGRATION-VERIFICATION.md。
 - [ ] P11：文件解析证据已有，真实电脑 UI 与同步尚未闭环。
 - [ ] P12：待上述工作完成。
