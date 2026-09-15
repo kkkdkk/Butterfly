@@ -31,6 +31,43 @@ const EdgeInsets settingsCardTitlePadding = EdgeInsets.only(
   right: 12,
 );
 
+const _einkColorScheme = ColorScheme.light(
+  primary: Colors.black,
+  onPrimary: Colors.white,
+  primaryContainer: Colors.black,
+  onPrimaryContainer: Colors.white,
+  secondary: Colors.black,
+  onSecondary: Colors.white,
+  secondaryContainer: Color(0xFFE0E0E0),
+  onSecondaryContainer: Colors.black,
+  tertiary: Colors.black,
+  onTertiary: Colors.white,
+  tertiaryContainer: Color(0xFFBDBDBD),
+  onTertiaryContainer: Colors.black,
+  error: Colors.black,
+  onError: Colors.white,
+  errorContainer: Colors.black,
+  onErrorContainer: Colors.white,
+  surface: Colors.white,
+  onSurface: Colors.black,
+  surfaceDim: Color(0xFFBDBDBD),
+  surfaceBright: Colors.white,
+  surfaceContainerLowest: Colors.white,
+  surfaceContainerLow: Color(0xFFF5F5F5),
+  surfaceContainer: Color(0xFFEEEEEE),
+  surfaceContainerHigh: Color(0xFFE0E0E0),
+  surfaceContainerHighest: Color(0xFFE0E0E0),
+  onSurfaceVariant: Colors.black,
+  outline: Colors.black,
+  outlineVariant: Color(0xFF616161),
+  shadow: Colors.black,
+  scrim: Colors.black,
+  inverseSurface: Colors.black,
+  onInverseSurface: Colors.white,
+  inversePrimary: Colors.white,
+  surfaceTint: Colors.transparent,
+);
+
 ThemeData getThemeData(
   String name,
   bool dark, [
@@ -41,12 +78,10 @@ ThemeData getThemeData(
   if (EinkDisplay.enabled) {
     dark = false;
     highContrast = true;
-    overridden = null;
+    overridden = _einkColorScheme;
   }
-  final color = EinkDisplay.enabled
-      ? const FlexSchemeColor(primary: Colors.black, secondary: Colors.black)
-      : getFlexThemeColor(name, dark);
-  final override = overridden != null && name.isEmpty;
+  final color = getFlexThemeColor(name, dark);
+  final override = overridden != null && (name.isEmpty || EinkDisplay.enabled);
   ThemeData theme;
   if (dark) {
     theme = FlexThemeData.dark(
@@ -71,7 +106,7 @@ ThemeData getThemeData(
       fontFamilyFallback: ['NotoSansArabic', 'Roboto'],
     );
   }
-  return theme.copyWith(
+  final base = theme.copyWith(
     tabBarTheme: const TabBarThemeData(tabAlignment: TabAlignment.center),
     dropdownMenuTheme: DropdownMenuThemeData(
       inputDecorationTheme: defaultDropdownInputDecorationTheme(),
@@ -79,6 +114,41 @@ ThemeData getThemeData(
     sliderTheme: theme.sliderTheme.copyWith(year2023: false),
     progressIndicatorTheme: theme.progressIndicatorTheme.copyWith(
       year2023: false,
+    ),
+  );
+  if (!EinkDisplay.enabled) return base;
+  final selectedBackground = WidgetStateProperty.resolveWith<Color?>((states) {
+    if (states.contains(WidgetState.disabled)) return const Color(0xFFE0E0E0);
+    return states.contains(WidgetState.selected) ? Colors.black : Colors.white;
+  });
+  final selectedForeground = WidgetStateProperty.resolveWith<Color?>((states) {
+    if (states.contains(WidgetState.disabled)) return const Color(0xFF616161);
+    return states.contains(WidgetState.selected) ? Colors.white : Colors.black;
+  });
+  return base.copyWith(
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        backgroundColor: selectedBackground,
+        foregroundColor: selectedForeground,
+        side: const WidgetStatePropertyAll(BorderSide(color: Colors.black)),
+      ),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        backgroundColor: selectedBackground,
+        foregroundColor: selectedForeground,
+        side: const WidgetStatePropertyAll(BorderSide(color: Colors.black)),
+      ),
+    ),
+    navigationRailTheme: base.navigationRailTheme.copyWith(
+      indicatorColor: Colors.black,
+      selectedIconTheme: const IconThemeData(color: Colors.white),
+      selectedLabelTextStyle: const TextStyle(
+        color: Colors.black,
+        fontWeight: FontWeight.bold,
+      ),
+      unselectedIconTheme: const IconThemeData(color: Colors.black),
+      unselectedLabelTextStyle: const TextStyle(color: Colors.black),
     ),
   );
 }

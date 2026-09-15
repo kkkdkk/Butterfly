@@ -49,6 +49,7 @@ class _ColorToolbarViewState extends State<ColorToolbarView> {
   @override
   void initState() {
     super.initState();
+    if (EinkDisplay.enabled) return;
     _fileSystem = context.read<ButterflyFileSystem>();
     _colorPalette = _loadPalette();
   }
@@ -191,20 +192,25 @@ class _ColorToolbarViewState extends State<ColorToolbarView> {
   @override
   Widget build(BuildContext context) {
     if (EinkDisplay.enabled) {
-      return Row(children: [
-        ...widget.actions,
-        if (widget.strokeWidth != null && widget.onStrokeWidthChanged != null)
-          SizedBox(
-            width: 140,
-            child: NumberInput(
-              value: widget.strokeWidth!,
-              min: 0,
-              step: 0.1,
-              fractionDigits: 1,
-              onChanged: widget.onStrokeWidthChanged,
+      return ListView(
+        shrinkWrap: true,
+        scrollDirection: Axis.horizontal,
+        children: [
+          ...widget.actions,
+          if (widget.actions.isNotEmpty && widget.strokeWidth != null)
+            const VerticalDivider(),
+          if (widget.strokeWidth != null && widget.onStrokeWidthChanged != null)
+            Center(
+              child: NumberInput(
+                value: widget.strokeWidth!,
+                min: 0,
+                step: 0.1,
+                fractionDigits: 1,
+                onChanged: widget.onStrokeWidthChanged,
+              ),
             ),
-          ),
-      ]);
+        ],
+      );
     }
     final state = context.read<DocumentBloc>().state;
     if (state is! DocumentLoadSuccess) return const SizedBox.shrink();
