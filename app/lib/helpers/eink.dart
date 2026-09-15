@@ -28,9 +28,9 @@ class EinkDisplay {
   }
 
   static void paint(bool display, VoidCallback callback) => runZoned(
-        callback,
-        zoneValues: {_inkZone: enabled && display ? _EinkPaintContext() : null},
-      );
+    callback,
+    zoneValues: {_inkZone: enabled && display ? _EinkPaintContext() : null},
+  );
 
   static _EinkPaintContext? get _context =>
       Zone.current[_inkZone] as _EinkPaintContext?;
@@ -60,8 +60,9 @@ class EinkDisplay {
   static Color paper(Color original) {
     final context = _context;
     if (context == null || original.a == 0) return original;
-    return (context.darkPaper ? Colors.black : Colors.white)
-        .withValues(alpha: original.a);
+    return (context.darkPaper ? Colors.black : Colors.white).withValues(
+      alpha: original.a,
+    );
   }
 }
 

@@ -29,7 +29,11 @@ void main() {
     ]) {
       EinkDisplay.enabled = true;
       await EinkDisplay.initialize(detect: () async => throw error);
-      expect(EinkDisplay.enabled, isFalse, reason: error.runtimeType.toString());
+      expect(
+        EinkDisplay.enabled,
+        isFalse,
+        reason: error.runtimeType.toString(),
+      );
     }
   });
 }

@@ -56,16 +56,20 @@ abstract class GenericTextRenderer<T extends LabelElement> extends Renderer<T> {
     final mappedBackground = !hasBackground
         ? background
         : (background.computeLuminance() < 0.5 ? Colors.black : Colors.white)
-            .withValues(alpha: background.a);
-    final darkBackground = hasBackground &&
-        Color.alphaBlend(mappedBackground!, EinkDisplay.paperColor)
-                .computeLuminance() <
+              .withValues(alpha: background.a);
+    final darkBackground =
+        hasBackground &&
+        Color.alphaBlend(
+              mappedBackground!,
+              EinkDisplay.paperColor,
+            ).computeLuminance() <
             0.5;
     Color? foreground(Color? value) {
       if (value == null || value.a == 0) return value;
       if (!hasBackground) return EinkDisplay.ink(value);
-      return (darkBackground ? Colors.white : Colors.black)
-          .withValues(alpha: value.a);
+      return (darkBackground ? Colors.white : Colors.black).withValues(
+        alpha: value.a,
+      );
     }
 
     return style.copyWith(
