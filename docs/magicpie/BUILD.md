@@ -29,7 +29,9 @@
   -CacheRoot 'D:\build-cache\butterfly-magicpie'
 ```
 
-脚本依次执行 `flutter pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。脚本仅在当前进程中设置 `FLUTTER_WINDOWS=false` 和 `FLUTTER_LINUX=false`，避免 Android-only 构建为未使用的桌面插件创建符号链接，因此当前配置不要求启用 Windows Developer Mode。Flutter 的项目级或全局 `enable-windows-desktop` / `enable-linux-desktop` 显式配置优先于环境变量；若它们被显式开启，需先移除该覆盖或启用 Windows Developer Mode。所有临时环境变量在成功或失败后都会恢复，且不会改写 Flutter 的全局配置。构建使用 `--no-pub` 避免重复解析依赖。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
+脚本依次执行 `flutter pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。脚本仅在当前进程中设置 `FLUTTER_WINDOWS=false` 和 `FLUTTER_LINUX=false`，避免 Android-only 构建为未使用的桌面插件创建符号链接，因此当前配置不要求启用 Windows Developer Mode。Flutter 的项目级或全局 `enable-windows-desktop` / `enable-linux-desktop` 显式配置优先于环境变量；若它们被显式开启，需先移除该覆盖或启用 Windows Developer Mode。所有临时环境变量在成功或失败后都会恢复，且不会改写 Flutter 的全局配置。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`，仅跳过前置的独立 pub get 和 gen-l10n；build 本身保留正常依赖与平台生成步骤。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
+
+不要为 build 添加 `--no-pub`：Flutter 3.44.9 同时会跳过 Android 插件注册文件生成。在干净检出且跳过前置 pub get 时，构建仍可能成功，但 APK 缺少 `GeneratedPluginRegistrant`，JNI 未初始化便会在启动时崩溃。脚本构建后检查生成文件包含 `JniPlugin` 和 `JniFlutterPlugin` 注册项；交付验收还需检查 APK dex 中的注册类及真机冷启动。
 
 ### 生成真机兼容性测试文档
 

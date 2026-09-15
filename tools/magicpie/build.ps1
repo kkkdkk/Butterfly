@@ -69,11 +69,23 @@ try {
         '--flavor', 'magicpie',
         '--dart-define=flavor=magicpie',
         '--target-platform', 'android-arm',
-        '--split-per-abi',
-        '--no-pub'
+        '--split-per-abi'
     )
+    # Flutter 3.44 also skips Android plugin registration with --no-pub.
+    # Keep build's normal preparation even when explicit pub get was skipped.
     & $flutter @arguments
     if ($LASTEXITCODE -ne 0) { throw "flutter build apk failed with exit code $LASTEXITCODE" }
+
+    $registrant = Join-Path $appDir 'android\app\src\main\java\io\flutter\plugins\GeneratedPluginRegistrant.java'
+    if (-not (Test-Path -LiteralPath $registrant)) {
+        throw 'Android plugin registrant was not generated; APK must not be distributed.'
+    }
+    $registration = Get-Content -LiteralPath $registrant -Raw
+    foreach ($plugin in @('com.github.dart_lang.jni.JniPlugin', 'com.github.dart_lang.jni_flutter.JniFlutterPlugin')) {
+        if (-not $registration.Contains("new $plugin(")) {
+            throw "Required Android plugin is not registered: $plugin"
+        }
+    }
 } finally {
     if ($locationPushed) { Pop-Location }
     foreach ($name in $environmentNames) {
