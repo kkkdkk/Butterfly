@@ -51,6 +51,11 @@ android {
             applicationIdSuffix = ".nightly"
             manifestPlaceholders["appName"] = "Butterfly Nightly"
         }
+        create("magicpie") {
+            dimension = "default"
+            applicationId = "dev.linwood.butterfly.magicpie"
+            manifestPlaceholders["appName"] = "Butterfly for Magic Pie (Unofficial)"
+        }
     }
 
     sourceSets {
