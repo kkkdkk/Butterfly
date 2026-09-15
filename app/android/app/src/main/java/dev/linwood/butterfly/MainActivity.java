@@ -218,6 +218,7 @@ public class MainActivity extends FlutterActivity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        long begin = android.os.SystemClock.uptimeMillis();
         if (nativeInkController != null && nativeInkMotionEvent != null) {
             try {
                 nativeInkMotionEvent.invoke(nativeInkController, event);
@@ -225,7 +226,18 @@ public class MainActivity extends FlutterActivity {
                 Log.w(NATIVE_INK_TAG, "Native ink event audit failed", unwrap(error));
             }
         }
-        return super.dispatchTouchEvent(event);
+        long audited = android.os.SystemClock.uptimeMillis();
+        boolean handled = super.dispatchTouchEvent(event);
+        long finished = android.os.SystemClock.uptimeMillis();
+        if (nativeInkController != null && (finished - begin >= 100
+                || event.getActionMasked() == MotionEvent.ACTION_DOWN
+                || event.getActionMasked() == MotionEvent.ACTION_CANCEL)) {
+            Log.i(NATIVE_INK_TAG, "Dispatch action=" + event.getActionMasked()
+                    + " auditMs=" + (audited - begin)
+                    + " flutterMs=" + (finished - audited)
+                    + " arrivalLagMs=" + Math.max(0, begin - event.getEventTime()));
+        }
+        return handled;
     }
 
     @Override
@@ -236,6 +248,7 @@ public class MainActivity extends FlutterActivity {
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
+        if (nativeInkController != null) Log.i(NATIVE_INK_TAG, "Window focus=" + hasFocus);
         if (!hasFocus) {
             invokeNativeInkBoolean(nativeInkDispose);
         }

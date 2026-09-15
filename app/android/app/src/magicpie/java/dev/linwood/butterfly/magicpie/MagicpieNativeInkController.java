@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
@@ -47,6 +48,8 @@ public final class MagicpieNativeInkController {
     private boolean started;
     private boolean penDown;
     private boolean ordinaryStylusDown;
+    private volatile Handler watchdogHandler;
+    private volatile long lastMainHeartbeat;
 
     private int androidDownCount;
     private int androidMoveCount;
@@ -91,6 +94,8 @@ public final class MagicpieNativeInkController {
 
         int operation = beginOperation(result);
         eligibleScreenRect = target.screenRect;
+        Log.i(TAG, "Preparing screenRect=" + eligibleScreenRect
+                + " rotation=" + activity.getWindowManager().getDefaultDisplay().getRotation());
         deferredDirtyRect = null;
         flutterSurfaceView = target.surfaceView;
         captureSurface(target, operation, bitmap -> startWithBackground(operation, bitmap));
@@ -381,6 +386,7 @@ public final class MagicpieNativeInkController {
             return;
         }
         try {
+            startMainThreadWatchdog();
             nativeInk = new HandWritingNative();
             nativeInk.setEventListener(this::onNativeEvent);
             nativeInk.rotate(activity.getWindowManager().getDefaultDisplay().getRotation());
@@ -559,7 +565,56 @@ public final class MagicpieNativeInkController {
             started = false;
             recycleRetainedBitmaps();
         }
+        stopMainThreadWatchdog();
         return success;
+    }
+
+    // Experimental diagnostics only: capture our own thread stacks during a
+    // stall, without root or per-point logging. Never change native state here.
+    private void startMainThreadWatchdog() {
+        stopMainThreadWatchdog();
+        HandlerThread thread = new HandlerThread("MagicpieInkWatchdog");
+        thread.start();
+        Handler worker = new Handler(thread.getLooper());
+        watchdogHandler = worker;
+        lastMainHeartbeat = SystemClock.uptimeMillis();
+        worker.post(new Runnable() {
+            private boolean reported;
+
+            @Override
+            public void run() {
+                if (watchdogHandler != worker) return;
+                long lag = SystemClock.uptimeMillis() - lastMainHeartbeat;
+                if (lag >= 2000 && !reported) {
+                    reported = true;
+                    Log.w(TAG, "Main thread heartbeat stalled ms=" + lag);
+                    for (Map.Entry<Thread, StackTraceElement[]> entry
+                            : Thread.getAllStackTraces().entrySet()) {
+                        String name = entry.getKey().getName();
+                        if (entry.getKey() == Looper.getMainLooper().getThread()
+                                || name.contains(".ui") || name.contains(".raster")) {
+                            Throwable trace = new Throwable("Ink stall thread=" + name);
+                            trace.setStackTrace(entry.getValue());
+                            Log.w(TAG, "Ink stall stack", trace);
+                        }
+                    }
+                } else if (lag < 2000) {
+                    reported = false;
+                }
+                mainHandler.post(() -> {
+                    if (watchdogHandler == worker) {
+                        lastMainHeartbeat = SystemClock.uptimeMillis();
+                    }
+                });
+                worker.postDelayed(this, 1000);
+            }
+        });
+    }
+
+    private void stopMainThreadWatchdog() {
+        Handler worker = watchdogHandler;
+        watchdogHandler = null;
+        if (worker != null) worker.getLooper().quitSafely();
     }
 
     private void releaseReplacedBitmaps(Bitmap active) {

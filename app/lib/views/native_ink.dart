@@ -29,6 +29,9 @@ class _NativeInkViewportState extends State<NativeInkViewport>
   final _session = NativeInkSession.instance;
   Object? _configuration;
   Object? _viewport;
+  int _prepareRequest = 0;
+  bool _retryPending = false;
+  bool _stylusDown = false;
   bool _resumed = true;
   bool _updateQueued = false;
   int _down = 0, _move = 0, _up = 0, _cancel = 0;
@@ -48,6 +51,7 @@ class _NativeInkViewportState extends State<NativeInkViewport>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _invalidateConfiguration();
     if (_enabled) {
       GestureBinding.instance.pointerRouter.removeGlobalRoute(_globalPointer);
     }
@@ -58,7 +62,7 @@ class _NativeInkViewportState extends State<NativeInkViewport>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _resumed = state == AppLifecycleState.resumed;
-    _configuration = null;
+    _invalidateConfiguration();
     if (!_enabled) return;
     unawaited(_session.dispose());
     if (_resumed) setState(() {});
@@ -71,6 +75,42 @@ class _NativeInkViewportState extends State<NativeInkViewport>
       _updateQueued = false;
       if (mounted) _update();
     });
+  }
+
+  void _invalidateConfiguration() {
+    _configuration = null;
+    _prepareRequest++;
+    _retryPending = false;
+  }
+
+  Future<void> _prepare(
+    Object configuration,
+    int request,
+    Rect rect,
+    double dpr,
+  ) async {
+    final ready = await _session.prepare(rect, dpr);
+    if (!mounted ||
+        request != _prepareRequest ||
+        configuration != _configuration) {
+      return;
+    }
+    _retryPending = !ready;
+  }
+
+  Future<void> _present(
+    Object configuration,
+    int request,
+    PenHandler handler,
+  ) async {
+    await _session.presentAfterFrame(isReady: () => !handler.hasPendingInk);
+    if (!mounted ||
+        request != _prepareRequest ||
+        configuration != _configuration ||
+        _session.active) {
+      return;
+    }
+    _retryPending = true;
   }
 
   void _update() {
@@ -109,7 +149,7 @@ class _NativeInkViewportState extends State<NativeInkViewport>
         bounds.hasSize;
     if (!safe) {
       if (_configuration != null || _session.active) {
-        _configuration = null;
+        _invalidateConfiguration();
         unawaited(_session.dispose());
       }
       return;
@@ -124,14 +164,15 @@ class _NativeInkViewportState extends State<NativeInkViewport>
       handler.data,
     );
     if (configuration != _configuration) {
+      if (_stylusDown) return;
+      _retryPending = false;
       _configuration = configuration;
       _viewport = index.cameraViewport;
-      unawaited(_session.prepare(rect, dpr));
+      final request = ++_prepareRequest;
+      unawaited(_prepare(configuration, request, rect, dpr));
     } else if (_viewport != index.cameraViewport) {
       _viewport = index.cameraViewport;
-      unawaited(
-        _session.presentAfterFrame(isReady: () => !handler.hasPendingInk),
-      );
+      unawaited(_present(configuration, _prepareRequest, handler));
     }
   }
 
@@ -140,6 +181,7 @@ class _NativeInkViewportState extends State<NativeInkViewport>
       return;
     }
     if (event is PointerDownEvent) {
+      _stylusDown = true;
       _down++;
       _pressureMin = double.infinity;
       _pressureMax = 0;
@@ -153,14 +195,19 @@ class _NativeInkViewportState extends State<NativeInkViewport>
     if (event is PointerUpEvent) _up++;
     if (event is PointerCancelEvent) _cancel++;
     if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _stylusDown = false;
       debugPrint(
         'MagicpieInk Flutter down=$_down move=$_move up=$_up '
         'cancel=$_cancel native=${_session.active} '
         'pressure=$_pressureMin..$_pressureMax',
       );
       if (event is PointerCancelEvent) {
-        _configuration = null;
+        _invalidateConfiguration();
         unawaited(_session.dispose());
+      } else if (_retryPending && _configuration != null) {
+        _retryPending = false;
+        _configuration = null;
+        setState(() {});
       }
     }
   }
@@ -181,7 +228,7 @@ class _NativeInkViewportState extends State<NativeInkViewport>
         inCanvas;
     if (event is PointerCancelEvent ||
         (event is PointerDownEvent && !ordinaryPen)) {
-      _configuration = null;
+      _invalidateConfiguration();
       unawaited(_session.dispose());
     }
     if (event is PointerUpEvent || event is PointerCancelEvent) {
