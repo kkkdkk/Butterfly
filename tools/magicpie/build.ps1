@@ -24,7 +24,7 @@ foreach ($required in @($flutter, $java, $AndroidSdk)) {
 $environmentNames = @(
     'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'JAVA_HOME', 'PUB_CACHE',
     'GRADLE_USER_HOME', 'USE_LEGACY_PACKAGING', 'FLUTTER_WINDOWS',
-    'FLUTTER_LINUX', 'PATH'
+    'FLUTTER_LINUX', 'GRADLE_OPTS', 'PATH'
 )
 $savedEnvironment = @{}
 foreach ($name in $environmentNames) {
@@ -44,6 +44,12 @@ try {
     # does not require Windows Developer Mode to create plugin symlinks.
     $env:FLUTTER_WINDOWS = 'false'
     $env:FLUTTER_LINUX = 'false'
+    # Flutter may otherwise prefer Android Studio's bundled JBR over JAVA_HOME.
+    # Forward slashes avoid backslash interpretation in the Gradle JVM option.
+    $gradleJavaHome = $JavaHome.Replace('\', '/')
+    $javaHomeOption = "-Dorg.gradle.java.home=`"$gradleJavaHome`""
+    $env:GRADLE_OPTS = (($savedEnvironment['GRADLE_OPTS'], $javaHomeOption) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
     $env:PATH = "$(Join-Path $FlutterSdk 'bin');$(Join-Path $JavaHome 'bin');$env:PATH"
 
     New-Item -ItemType Directory -Force -Path $env:PUB_CACHE, $env:GRADLE_USER_HOME | Out-Null
