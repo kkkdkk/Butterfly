@@ -29,7 +29,7 @@
   -CacheRoot 'D:\build-cache\butterfly-magicpie'
 ```
 
-脚本依次执行 `dart pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。这里刻意使用 `dart pub get`：Windows 上的 `flutter pub get` 会为未参与本次构建的桌面插件创建符号链接，在未启用 Developer Mode 的机器上会失败。Android 构建仍由 Flutter 完成，并使用 `--no-pub` 避免重复触发该桌面步骤。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
+脚本依次执行 `flutter pub get`、`flutter gen-l10n` 和 ARMv7 APK 构建，并检查每一步退出码、产物路径及 SHA256。脚本仅在当前进程中设置 `FLUTTER_WINDOWS=false` 和 `FLUTTER_LINUX=false`，避免 Android-only 构建为未使用的桌面插件创建符号链接，因此不要求启用 Windows Developer Mode。所有临时环境变量在成功或失败后都会恢复，且不会改写 Flutter 的全局配置。构建使用 `--no-pub` 避免重复解析依赖。依赖及生成的本地化代码已经就绪时可传 `-SkipPubGet`。构建通过 `USE_LEGACY_PACKAGING=true` 启用 legacy JNI native-library packaging，并使用 `--target-platform android-arm --split-per-abi` 限定 ARMv7 产物。
 
 预期产物：
 
