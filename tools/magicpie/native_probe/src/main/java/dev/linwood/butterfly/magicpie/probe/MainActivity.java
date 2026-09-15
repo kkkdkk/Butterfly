@@ -31,6 +31,11 @@ public final class MainActivity extends Activity {
     private boolean started;
     private int nativeEventCount;
     private int androidStylusEventCount;
+    private int androidDownCount;
+    private int androidMoveCount;
+    private int androidUpCount;
+    private int androidCancelCount;
+    private int androidHistoryCount;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -115,14 +120,6 @@ public final class MainActivity extends Activity {
 
     private void onNativeEvent(HandWritingEvent event) {
         nativeEventCount++;
-        int count = nativeEventCount;
-        int action = event.getAction();
-        float x = event.getX();
-        float y = event.getY();
-        if (action == HandWritingEvent.ACTION_UP || count % 25 == 0) {
-            Log.i(TAG, "native event action=" + action + " x=" + x + " y=" + y);
-            runOnUiThread(() -> showStatus("Native ink running"));
-        }
     }
 
     @Override
@@ -132,9 +129,16 @@ public final class MainActivity extends Activity {
                 || toolType == MotionEvent.TOOL_TYPE_ERASER) {
             androidStylusEventCount++;
             int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_UP || androidStylusEventCount % 25 == 0) {
-                Log.i(TAG, "Android stylus event action=" + action
-                        + " x=" + event.getX() + " y=" + event.getY());
+            androidHistoryCount += event.getHistorySize();
+            if (action == MotionEvent.ACTION_DOWN) androidDownCount++;
+            if (action == MotionEvent.ACTION_MOVE) androidMoveCount++;
+            if (action == MotionEvent.ACTION_UP) androidUpCount++;
+            if (action == MotionEvent.ACTION_CANCEL) androidCancelCount++;
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                Log.i(TAG, "Android stroke totals down=" + androidDownCount
+                        + " move=" + androidMoveCount + " up=" + androidUpCount
+                        + " cancel=" + androidCancelCount + " history=" + androidHistoryCount
+                        + " nativeEvents=" + nativeEventCount + " started=" + started);
                 showStatus(started ? "Native ink running" : "Stopped");
             }
         }
@@ -196,9 +200,11 @@ public final class MainActivity extends Activity {
     }
 
     private void showStatus(String message) {
+        Log.i(TAG, "State: " + message);
         status.setText("Public system library only - " + message
                 + "\nnativeEvents=" + nativeEventCount
-                + ", androidStylusEvents=" + androidStylusEventCount);
+                + ", androidStylusEvents=" + androidStylusEventCount
+                + " D/M/U=" + androidDownCount + "/" + androidMoveCount + "/" + androidUpCount);
     }
 
     private void cleanupNativeInk() {
