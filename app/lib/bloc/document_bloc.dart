@@ -1760,6 +1760,33 @@ class DocumentBloc extends ReplayBloc<DocumentEvent, DocumentState> {
     return result.map((e) => renderers[e]).toSet();
   }
 
+  @override
+  void undo() {
+    if (!canUndo) return;
+    super.undo();
+    _markReplayChanged();
+  }
+
+  @override
+  void redo() {
+    if (!canRedo) return;
+    super.redo();
+    _markReplayChanged();
+  }
+
+  void _markReplayChanged() {
+    final current = state;
+    final cubit = _currentIndexCubit;
+    if (current is! DocumentLoadSuccess || cubit == null) return;
+    cubit.setSaveState(saved: SaveState.unsaved, keepRead: true);
+    if (current.hasAutosave(
+      cubit.state.networkingService,
+      cubit.state.embedding,
+    )) {
+      unawaited(cubit.save(this, isAutosave: true));
+    }
+  }
+
   void sendUndo() {
     if (!(networkingService?.sendUndo() ?? false)) {
       undo();

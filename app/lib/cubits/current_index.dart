@@ -2482,8 +2482,8 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
   }) async {
     final absolute = state.absolute;
     if (location == null &&
-        (state.saved == SaveState.saved ||
-            state.saved == SaveState.absoluteRead)) {
+        (state.saved == SaveState.absoluteRead ||
+            (!force && state.saved == SaveState.saved))) {
       return state.location;
     }
     if (state.networkingService.isClient) {
@@ -2505,8 +2505,8 @@ class CurrentIndexCubit extends Cubit<CurrentIndex> {
     }
     return _savingLock.synchronized(() async {
       if (location == null &&
-          (state.saved == SaveState.saved ||
-              state.saved == SaveState.absoluteRead)) {
+          (state.saved == SaveState.absoluteRead ||
+              (!force && state.saved == SaveState.saved))) {
         return state.location;
       }
       var current = location ?? state.location;
