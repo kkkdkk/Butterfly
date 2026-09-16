@@ -1,12 +1,12 @@
 # 从墨水屏原稿到 AI 笔记与图表
 
-日期：2026-09-16。状态：路线与源码能力已核查；GitHub Windows 客户端已安装。尚未部署目录监听、自动导出或识别流水线，WebDAV 403 未判定已解决。
+日期：2026-09-16。状态：GitHub Windows 客户端已安装；本仓库新增本地只读 PNG CLI，已用合成原稿实测。尚未部署目录监听或 AI 识别流水线，WebDAV 403 未判定已解决。
 
 ## 1. 确定采用的路线
 
 第一阶段：**Butterfly 保存 `.bfly` → 同步/手动复制到电脑 → Butterfly 按页或区域导出 PNG → Codex 读图 → 忠实稿与整理稿 → Mermaid**。
 
-第二阶段再补自动渲染和批处理；draw.io/Excalidraw作为输出适配器，不先做所有格式的双向无损转换。
+本轮已补命令行渲染和文件批处理；第二阶段再补按需触发的识别与高清分块。draw.io/Excalidraw作为输出适配器，不先做所有格式的双向无损转换。
 
 理由：
 
@@ -18,8 +18,8 @@
 
 ## 2. 现在如何使用
 
-1. 在 GitHub 版 Butterfly 打开同步下来的受控测试 `.bfly`。
-2. 优先给每段内容建立清晰的页或 Area；选择整页/区域导出 PNG，而不是截取屏幕或工具栏。
+1. 将受控测试 `.bfly` 同步或复制到电脑，等待保存完成。
+2. 优先给每段内容建立清晰的页或 Area；用本仓库 [bfly-export](../../tools/bfly-export/README.md) 批量导出 PNG，也可在 GitHub 版 Butterfly 中手动导出，而不是截取屏幕或工具栏。
 3. 将 PNG 放进独立的识别工作目录，告诉当前 Codex 任务这个绝对路径即可；无需先新建云端服务。
 4. 先生成逐字忠实稿并标注疑问，再单独整理，不在不确定处自动补写。
 5. 文字输出 Markdown；明确的节点/箭头/分支输出 Mermaid。审核后再按需要生成原生可编辑 draw.io/Excalidraw 文件。
@@ -70,9 +70,10 @@ MagicpieAI/
 | GUI整页、区域导出 | `app/lib/dialogs/export/general.dart`、`app/lib/dialogs/area/context.dart` | 第一阶段使用 |
 | 压感轮廓算法 | `app/lib/renderers/elements/pen.dart` 的 `_getOutlinePoints` | 必须复用，不能用简单连点替代 |
 | Web embed | `app/lib/embed/handler.dart` 的 `setData/render/renderSVG` | 有基础接口，不是完整批处理协议 |
-| CLI批量导出 | `app/lib/main.dart` | **没有现成export命令**；当前CLI是GUI启动和路径参数 |
+| 官方CLI | `app/lib/main.dart` | 2.5.5 **没有内置export命令**；只支持GUI启动和路径参数 |
+| 本仓库新增CLI | `tools/bfly-export/cli.mjs`、`app/lib/bfly_export_main.dart` | 本地headless浏览器调用独立worker；已实测多页、Area、压感、图片、中文字体与哈希保护 |
 
-第二阶段新增本地只读导出入口，至少补齐：指定页面/Area、加载完成确认、任务ID、串行渲染、尺寸/质量限制与错误返回。可复用本地Web build的embed，但现有setData重建路由没有可靠ready确认，render只针对当前页；不能靠固定sleep和多任务并发直接上生产。
+已实现独立本地 Web worker（没有使用主应用 embed 路由）：指定页面/Area、ready 确认、Promise 返回、串行渲染、像素预算与错误返回。Node CLI 只读快照，校验源 SHA256 和 PNG 完整性，拒绝覆盖已有输出。使用本地 CanvasKit，不访问外网；不启动文档同步服务。当前依赖构建后的 Web 文件、Node 和 Edge/Chrome/Chromium，不是一个单独 exe。
 
 不要使用长期GUI点击宏作为后台批量导出的最终实现。正式入口可采用本地Web wrapper或带Flutter engine的专用导出程序；纯Dart CLI不能直接运行dart:ui renderer。
 
@@ -80,8 +81,8 @@ MagicpieAI/
 
 - 有Area：每个区域一张图，记录区域名和页面名。
 - 无Area、范围适中：内容边界加边距，导出整页。
-- 大画布：一张整体概览加有重叠的高清分块；保留块坐标，用于合并跨块文字和箭头。
-- 明确隐藏图层是否参与，检查跨页图片/字体资产；不把整张巨大画布缩成无法读字的小图，也不生成无尺寸上限的位图。
+- 大画布：当前仅按上限缩放并给出 `limited`/warning，**高清分块尚未实现**；AI识字优先用Area。后续再加整体概览与重叠高清分块，保留坐标用于合并跨块文字和箭头。
+- 当前导出文件中全部图层，不继承 GUI 临时隐藏状态；中文打字内容指定 `--font`，手写矢量不需要字体。外部/丢失资产和嵌入PDF明确失败；不要把缺字、空白资产或缩小到不可读的PNG当作识别成功。
 
 ## 5. Codex 接入方式
 

@@ -1,0 +1,11 @@
+{
+  "name": "bfly-export",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local read-only Butterfly PNG export using the original Flutter renderer",
+  "engines": { "node": ">=20" },
+  "bin": { "bfly-export": "./cli.mjs" },
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "dependencies": { "playwright": "1.58.2" }
+}
