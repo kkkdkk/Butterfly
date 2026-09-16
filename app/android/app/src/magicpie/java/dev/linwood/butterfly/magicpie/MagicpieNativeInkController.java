@@ -2,6 +2,7 @@ package dev.linwood.butterfly.magicpie;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
@@ -101,7 +102,7 @@ public final class MagicpieNativeInkController {
         captureSurface(target, operation, bitmap -> startWithBackground(operation, bitmap));
     }
 
-    /** Refreshes the native background after Flutter has committed its document frame. */
+    /** Uses a rasterized Flutter canvas snapshot, never a possibly stale SurfaceView buffer. */
     public void present(Map<?, ?> arguments, MethodChannel.Result result) {
         if (!isActivityReady()) {
             dispose();
@@ -118,15 +119,44 @@ public final class MagicpieNativeInkController {
             result.success(false);
             return;
         }
+        Object image = arguments.get("image");
+        if (!(image instanceof byte[])) {
+            Log.w(TAG, "Native handoff requires a rasterized canvas image");
+            dispose();
+            result.success(false);
+            return;
+        }
         if (deferredDirtyRect != null) dirtyRect.union(deferredDirtyRect);
         if (penDown) {
             deferredDirtyRect = dirtyRect;
             result.success(true);
             return;
         }
+        Bitmap bitmap = null;
+        try {
+            byte[] encoded = (byte[]) image;
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inMutable = true;
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.length, options);
+            if (bitmap == null || bitmap.getWidth() != eligibleScreenRect.width()
+                    || bitmap.getHeight() != eligibleScreenRect.height()) {
+                if (bitmap != null) bitmap.recycle();
+                Log.w(TAG, "Rasterized canvas image has invalid dimensions");
+                dispose();
+                result.success(false);
+                return;
+            }
+        } catch (Throwable error) {
+            if (bitmap != null) bitmap.recycle();
+            Log.w(TAG, "Rasterized canvas image unavailable", error);
+            dispose();
+            result.success(false);
+            return;
+        }
         deferredDirtyRect = null;
         int operation = beginOperation(result);
-        presentNow(operation, dirtyRect);
+        applyPresentedBackground(operation, bitmap, dirtyRect);
     }
 
     /** Stops and destroys native state. A later restart requires an explicit prepare call. */
@@ -179,7 +209,7 @@ public final class MagicpieNativeInkController {
 
         if (stylusLike && action == MotionEvent.ACTION_UP) {
             if (toolType == MotionEvent.TOOL_TYPE_STYLUS && ordinaryStylusDown) {
-                stopNativeForFlutterFrame();
+                Log.i(TAG, "Native preview retained until rasterized Flutter frame");
             }
             penDown = false;
             ordinaryStylusDown = false;
@@ -421,38 +451,6 @@ public final class MagicpieNativeInkController {
         }
     }
 
-    private void presentNow(int operation, Rect dirtyRect) {
-        if (operation != generation || pendingResult == null || penDown
-                || nativeInk == null || !initialized
-                || eligibleScreenRect == null || flutterSurfaceView == null) {
-            finishOperation(operation, false);
-            return;
-        }
-        if (started) {
-            try {
-                nativeInk.stop();
-                started = false;
-            } catch (Throwable error) {
-                Log.w(TAG, "Native preview stop failed", error);
-                shutdownNativeSession();
-                finishOperation(operation, false);
-                return;
-            }
-        }
-
-        int[] surfaceLocation = new int[2];
-        flutterSurfaceView.getLocationOnScreen(surfaceLocation);
-        Rect sourceRect = new Rect(
-                eligibleScreenRect.left - surfaceLocation[0],
-                eligibleScreenRect.top - surfaceLocation[1],
-                eligibleScreenRect.right - surfaceLocation[0],
-                eligibleScreenRect.bottom - surfaceLocation[1]);
-        CaptureTarget target = new CaptureTarget(
-                flutterSurfaceView, new Rect(eligibleScreenRect), sourceRect);
-        captureSurface(target, operation,
-                bitmap -> applyPresentedBackground(operation, bitmap, dirtyRect));
-    }
-
     private void applyPresentedBackground(int operation, Bitmap bitmap, Rect dirtyRect) {
         retainedSetupBitmaps.add(bitmap);
         try {
@@ -462,6 +460,10 @@ public final class MagicpieNativeInkController {
                 shutdownNativeSession();
                 finishOperation(operation, false);
                 return;
+            }
+            if (started) {
+                nativeInk.stop();
+                started = false;
             }
             if (!nativeInk.setup(bitmap)) {
                 shutdownNativeSession();
@@ -477,7 +479,7 @@ public final class MagicpieNativeInkController {
                 return;
             }
             nativeInk.renderRect(dirtyRect);
-            Log.i(TAG, "Presented local rect left=" + dirtyRect.left
+            Log.i(TAG, "Presented rasterized canvas rect left=" + dirtyRect.left
                     + " top=" + dirtyRect.top
                     + " right=" + dirtyRect.right
                     + " bottom=" + dirtyRect.bottom);
@@ -496,23 +498,6 @@ public final class MagicpieNativeInkController {
         Log.i(TAG, "Native preview stopped: " + reason);
         invalidatePendingOperation();
         shutdownNativeSession();
-    }
-
-    private void stopNativeForFlutterFrame() {
-        if (nativeInk == null || !initialized) {
-            return;
-        }
-        if (started) {
-            try {
-                nativeInk.stop();
-                started = false;
-            } catch (Throwable error) {
-                Log.w(TAG, "Native preview stop failed at stylus up", error);
-                shutdownNativeSession();
-                return;
-            }
-        }
-        Log.i(TAG, "Native preview awaiting Flutter frame; initialized=1 started=0");
     }
 
     private int beginOperation(MethodChannel.Result result) {

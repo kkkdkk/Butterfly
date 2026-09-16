@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:archive/archive.dart';
 import 'package:butterfly/bloc/document_bloc.dart';
@@ -42,7 +43,33 @@ class _NativeInkHarness {
   }
 }
 
-Future<_NativeInkHarness> _pumpHarness(WidgetTester tester) async {
+class _LinePainter extends CustomPainter {
+  final ValueNotifier<bool> drawLine;
+
+  _LinePainter(this.drawLine) : super(repaint: drawLine);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
+    if (drawLine.value) {
+      canvas.drawLine(
+        const Offset(20, 20),
+        const Offset(80, 20),
+        Paint()
+          ..color = Colors.black
+          ..strokeWidth = 8,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LinePainter oldDelegate) => false;
+}
+
+Future<_NativeInkHarness> _pumpHarness(
+  WidgetTester tester, {
+  Widget child = const ColoredBox(color: Colors.white),
+}) async {
   final fileSystem = MockButterflyFileSystem();
   final settingsCubit = fileSystem.settingsCubit as MockSettingsCubit;
   when(
@@ -81,9 +108,7 @@ Future<_NativeInkHarness> _pumpHarness(WidgetTester tester) async {
         BlocProvider<CurrentIndexCubit>.value(value: currentIndexCubit),
         BlocProvider<SettingsCubit>.value(value: settingsCubit),
       ],
-      child: const MaterialApp(
-        home: NativeInkViewport(child: ColoredBox(color: Colors.white)),
-      ),
+      child: MaterialApp(home: NativeInkViewport(child: child)),
     ),
   );
   await tester.pump();
@@ -227,6 +252,63 @@ void main() {
       hasLength(1),
       reason: 'A successful current prepare must cancel the false retry flag',
     );
+    await tester.pump(const Duration(milliseconds: 60));
+  });
+
+  testWidgets('present captures the newly painted Flutter frame as PNG', (
+    tester,
+  ) async {
+    if (!NativeInkSession.experiment) return;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(NativeInkSession.channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    final drawLine = ValueNotifier(false);
+    addTearDown(drawLine.dispose);
+    final harness = await _pumpHarness(
+      tester,
+      child: CustomPaint(painter: _LinePainter(drawLine)),
+    );
+    addTearDown(harness.close);
+    expect(NativeInkSession.instance.active, isTrue);
+
+    drawLine.value = true;
+    await tester.pump();
+    NativeInkSession.instance.addDirty(const Rect.fromLTWH(10, 10, 80, 20));
+    late Future<void> presented;
+    await tester.runAsync(() async {
+      presented = NativeInkSession.instance.presentAfterFrame();
+    });
+    await tester.pump();
+    await tester.runAsync(() async {
+      await presented;
+      final present = calls.singleWhere((call) => call.method == 'present');
+      final png = present.arguments['image'] as Uint8List;
+      final codec = await ui.instantiateImageCodec(png);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final pixels = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      expect(pixels, isNotNull);
+      var blackPixels = 0;
+      for (var y = 16; y <= 24; y++) {
+        for (var x = 20; x <= 80; x++) {
+          final offset = (y * image.width + x) * 4;
+          if (pixels!.getUint8(offset) < 32 &&
+              pixels.getUint8(offset + 1) < 32 &&
+              pixels.getUint8(offset + 2) < 32 &&
+              pixels.getUint8(offset + 3) > 223) {
+            blackPixels++;
+          }
+        }
+      }
+      expect(blackPixels, greaterThan(0));
+      image.dispose();
+      codec.dispose();
+    });
     await tester.pump(const Duration(milliseconds: 60));
   });
 }

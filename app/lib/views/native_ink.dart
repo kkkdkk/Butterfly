@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:butterfly/bloc/document_bloc.dart';
 import 'package:butterfly/cubits/current_index.dart';
@@ -10,6 +12,7 @@ import 'package:butterfly/helpers/native_ink.dart';
 import 'package:butterfly_api/butterfly_api.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_leap/material_leap.dart';
 
@@ -26,6 +29,7 @@ class NativeInkViewport extends StatefulWidget {
 class _NativeInkViewportState extends State<NativeInkViewport>
     with WidgetsBindingObserver {
   final _boundsKey = GlobalKey();
+  final _captureKey = GlobalKey();
   final _session = NativeInkSession.instance;
   Object? _configuration;
   Object? _viewport;
@@ -83,13 +87,36 @@ class _NativeInkViewportState extends State<NativeInkViewport>
     _retryPending = false;
   }
 
+  Future<Uint8List?> _captureFrame(double dpr) async {
+    if (!mounted) return null;
+    final boundary = _captureKey.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary || !boundary.attached) return null;
+    try {
+      final image = await boundary.toImage(pixelRatio: dpr);
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (data == null) return null;
+        return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      } finally {
+        image.dispose();
+      }
+    } catch (error) {
+      debugPrint('MagicpieInk capture fallback: ${error.runtimeType}');
+      return null;
+    }
+  }
+
   Future<void> _prepare(
     Object configuration,
     int request,
     Rect rect,
     double dpr,
   ) async {
-    final ready = await _session.prepare(rect, dpr);
+    final ready = await _session.prepare(
+      rect,
+      dpr,
+      captureFrame: _captureFrame,
+    );
     if (!mounted ||
         request != _prepareRequest ||
         configuration != _configuration) {
@@ -251,7 +278,7 @@ class _NativeInkViewportState extends State<NativeInkViewport>
       onPointerMove: _audit,
       onPointerUp: _audit,
       onPointerCancel: _audit,
-      child: widget.child,
+      child: RepaintBoundary(key: _captureKey, child: widget.child),
     );
   }
 }

@@ -62,6 +62,7 @@ void main() {
         await NativeInkSession.instance.prepare(
           const Rect.fromLTWH(0, 0, 800, 600),
           1,
+          captureFrame: (_) async => Uint8List.fromList([137, 80, 78, 71]),
         ),
         isTrue,
       );

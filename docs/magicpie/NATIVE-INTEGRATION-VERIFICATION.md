@@ -1,6 +1,6 @@
 # Butterfly 原生快写集成实验
 
-日期：2026-09-16。状态：原生 start 成功，但真机首笔积压/取消后退回 Flutter；流畅与压力外观尚未同时通过。常规构建仍默认关闭。
+日期：2026-09-16。状态：已实机确认 SurfaceView 旧空白帧覆盖快写，改为光栅化画布快照交接并等待新版验收；流畅与压力外观尚未同时通过。常规构建仍默认关闭。
 
 ## 范围
 
@@ -75,3 +75,25 @@
 - 诊断 APK SHA256：`8DA45F21B57FE2936C858322BA4DAE036A8464AB3DB5675AC40FC5511C52BDFF`。覆盖安装成功，新 PID 29151，启动 crash buffer 为空。
 - 01:50:15.471 准备 `Rect(0,100–1404,1777)`，原生 API rotation=0；01:50:15.700 native started，01:50:15.701 Flutter prepared=true。新建浅色画布并选择默认笔后，请用户两次轻—重—轻，中间抬笔等约 20 秒，不操作工具或旋转；本轮实笔结果待回收。
 - 常规全量 `flutter test --no-pub`：117 项通过；其中 3 项 viewport 实验条件测试另以上述开启标记的 12 项运行实测，不能只用常规模式跳过的结果作为实验验收。
+
+## 早间连续实笔：显示落后一笔
+
+- 用户反馈“画下一笔，上一笔才会出现，粗细对的”。这是视觉交接失败，不是压感与流畅同时验收通过。
+- 重新连接后保留日志，当前进程 PID 6304（已非夜间 PID）。08:04:48.604 原生启动；08:04:50–08:05:09 连续七笔均为 initialized=1、started=1，收到普通 UP，无 cancel 或本轮主线程卡顿记录。
+- 七笔的 UP→renderer committed→Presented local rect 均按序出现；首笔 08:04:51.203 UP，51.250 renderer committed，51.573 local rect；末笔 08:05:09.291 UP，09.306 renderer committed，09.513 local rect。提交和局部调用约在抬笔后 0.2–0.4 秒内完成，不能据此证明物理屏幕已显示本笔。
+- 原生有效压力样本这次也正常，例如一笔 native/Android 最大压力均 0.9380，Flutter 提交最大 0.93797。无需先改压力归一化。
+- 静态审查确认新 renderer 已进入 visibleUnbakedElements，ViewPainter 监听 cameraViewport 并重画；没有发现此链路漏 repaint。Flutter endOfFrame 仅保证 UI post-frame，不等待 raster/SurfaceView 最新 buffer，立即 PixelCopy 有复制旧帧的可能，但尚未证实为真机唯一原因。
+- 增加临时只读像素对照：首次交接前统计 dirtyRect 的暗像素数量和 hash；完成交接约 100 ms 后再次 PixelCopy 同一区域，只比较、不 setup/start/renderRect；输入或会话变化即丢弃。此对照不是新增刷新，也不是生产修复。
+- 原始日志保存在忽略目录 `.magicpie-output/m2-research/magicpie-handoff-log-20260916-0825.txt`，不提交用户笔记或厂商代码。
+
+## 已确认旧缓冲区交接与针对性修正
+
+- 临时诊断 APK SHA256 `186E5AFA2C68A0B673B71E918F9C051B0357B4E1F2A79B0024FA700C86065647` 安装成功，PID 7399，启动无 crash。它没有改变原来的呈现策略。
+- 08:33:57.319，operation=26 的首次 PixelCopy dirty 区域为 `darkPixels=0,hash=e4f33a81`；08:33:57.542 同一操作的只读第二次 PixelCopy 为 `darkPixels=4119,hash=3db53c1c`。回调通过无新笔/无新会话的守卫。这是首次交接复制旧空白 buffer 的直接证据，不只是时序猜测。之前 operation=17/18 也出现首次 darkPixels=0，但后续新笔打断了对照，不能单独用于稳定帧比较。
+- 用户进一步描述：落笔能看到快写笔迹，随后马上消失；稍后像普通渲染一样只显示一部分，下一笔落下前一笔才完整出现。与抬笔过早 stop、旧空白/不完整截图覆盖快写的路径一致。
+- 证据日志保存在忽略目录 `.magicpie-output/m2-research/magicpie-stale-frame-proof-20260916.txt`。临时像素扫描在主线程运行，本轮延迟不能代表无诊断版本。
+- 修正方案：抬笔不再 stop；保持快写预览直到 Flutter 已绘制画布经 RepaintBoundary.toImage 完成光栅化并生成 PNG。present 传递该图像和原来的局部脏区，Android 解码尺寸校验后才 stop→setup→brush→start→renderRect。present 不再使用 SurfaceView PixelCopy，保留首次 prepare 的背景捕获；移除临时二次截图/像素扫描。
+- 新画面准备期间若开始下一笔或有更新的待提交脏区，不允许旧快照覆盖新笔。压感数据、存档格式和固定原生笔刷配置保持不变。本修正需要新的软件回归和真机验收，不能将根因确认等同于体验通过。
+- 同时修正 postFrameCallbacks 发起交接时的帧调度：显式 scheduleFrame 再等待 endOfFrame，防止等到下一次输入才出帧；旧 capture 异常不得 dispose 新会话，当前图片捕获或平台呈现失败则显式 dispose 后回退 Flutter。
+- 修复 APK 已覆盖安装：SHA256 `8030EE74BBE16E68ED088649CD679717A32835D41AC9C65A14362F328326B999`，PID 7955，启动 crash buffer 为空。08:48:50.793 原生 start，08:48:50.794 prepared=true。已打开新的浅色测试画布并选择默认笔，请用户单笔轻—重—轻、抬笔停 5 秒，验收是否仍消失/需要下一笔触发；尚未收到本轮结论。
+- 新版软件验收：全量 `flutter analyze --no-pub` 无问题，常规 `flutter test --no-pub` 124/124 通过；开启实验标记的 bridge/viewport/真实 ElementsCreated 提交三文件 20/20 通过。真实 RepaintBoundary.toImage PNG 解码检出本轮新画黑线，覆盖捕获期间新笔/处置、迟到异常不伤新会话、present 失败释放原生、post-frame 主动调度下一帧；原提交压力/一次撤销等断言保持通过。这仍不替代物理墨水屏的连续书写验收。
