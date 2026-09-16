@@ -234,6 +234,11 @@ abstract class Handler<T> {
 
   FutureOr<void> onPointerUp(PointerUpEvent event, EventContext context) {}
 
+  FutureOr<void> onPointerCancel(
+    PointerCancelEvent event,
+    EventContext context,
+  ) {}
+
   void onPointerHover(PointerHoverEvent event, EventContext context) {}
 
   void onTapUp(TapUpDetails details, EventContext context) {}

@@ -5,6 +5,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 
+// Existing handoff lifecycle tests opt into the retained diagnostic path.
+class HandoffTestSession extends NativeInkSession {
+  @override
+  Future<bool> prepare(
+    Rect rect,
+    double dpr, {
+    NativeInkFrameCapture? captureFrame,
+  }) async {
+    final ready = await super.prepare(rect, dpr, captureFrame: captureFrame);
+    if (ready && diagnosticMode == NativeInkDiagnosticMode.normal) {
+      diagnosticMode = NativeInkDiagnosticMode.handoff;
+    }
+    return ready;
+  }
+}
+
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   final calls = <MethodCall>[];
@@ -14,7 +30,7 @@ void main() {
   Future<Uint8List?> capture(double dpr) async => frame;
 
   setUp(() {
-    session = NativeInkSession();
+    session = HandoffTestSession();
     calls.clear();
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       NativeInkSession.channel,
@@ -32,6 +48,30 @@ void main() {
     );
   });
 
+  testWidgets('normal mode keeps native ink without capture or restart', (
+    tester,
+  ) async {
+    session = NativeInkSession();
+    var captures = 0;
+    await session.prepare(
+      const Rect.fromLTWH(0, 0, 80, 90),
+      1,
+      captureFrame: (_) async {
+        captures++;
+        return frame;
+      },
+    );
+    for (var stroke = 0; stroke < 3; stroke++) {
+      session.addDirty(const Rect.fromLTWH(10, 20, 30, 40));
+      await session.presentAfterFrame();
+      await tester.pump();
+    }
+    expect(session.diagnosticMode, NativeInkDiagnosticMode.normal);
+    expect(captures, 0);
+    expect(calls.map((call) => call.method), ['prepare']);
+    expect(session.active, isTrue);
+  });
+
   test('prepare sends logical bounds and DPR without double scaling', () async {
     expect(
       await session.prepare(const Rect.fromLTWH(4, 50, 800, 900), 1.25),
@@ -44,6 +84,7 @@ void main() {
       'width': 800.0,
       'height': 900.0,
       'dpr': 1.25,
+      if (NativeInkSession.diagnosticsEnabled) 'diagnosticEnabled': true,
     });
     expect(session.active, isTrue);
   });
@@ -52,6 +93,85 @@ void main() {
     expect(await session.prepare(Rect.zero, 1), isFalse);
     expect(calls.single.method, 'dispose');
     expect(session.active, isFalse);
+  });
+
+  for (final mode in ['record-only', 'commit-only']) {
+    testWidgets('$mode never captures or presents the Flutter canvas', (
+      tester,
+    ) async {
+      if (!NativeInkSession.diagnosticsEnabled) return;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        NativeInkSession.channel,
+        (call) async {
+          calls.add(call);
+          return call.method == 'prepare'
+              ? {'ready': true, 'diagnosticMode': mode}
+              : true;
+        },
+      );
+      var captures = 0;
+      expect(
+        await session.prepare(
+          const Rect.fromLTWH(0, 0, 80, 90),
+          1,
+          captureFrame: (_) async {
+            captures++;
+            return frame;
+          },
+        ),
+        isTrue,
+      );
+      for (var stroke = 0; stroke < 3; stroke++) {
+        session.addDirty(const Rect.fromLTWH(10, 20, 30, 40));
+        await session.presentAfterFrame();
+        await tester.pump();
+      }
+      expect(captures, 0);
+      expect(calls.map((call) => call.method), ['prepare']);
+      expect(session.active, isTrue);
+      await session.dispose();
+      expect(session.diagnosticMode, NativeInkDiagnosticMode.normal);
+    });
+  }
+
+  testWidgets('handoff diagnostic mode preserves capture and presentation', (
+    tester,
+  ) async {
+    if (!NativeInkSession.diagnosticsEnabled) return;
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      NativeInkSession.channel,
+      (call) async {
+        calls.add(call);
+        return call.method == 'prepare'
+            ? {'ready': true, 'diagnosticMode': 'handoff'}
+            : true;
+      },
+    );
+    await session.prepare(
+      const Rect.fromLTWH(0, 0, 80, 90),
+      1,
+      captureFrame: capture,
+    );
+    expect(session.diagnosticMode, NativeInkDiagnosticMode.handoff);
+    session.addDirty(const Rect.fromLTWH(10, 20, 30, 40));
+    final presented = session.presentAfterFrame();
+    await tester.pump();
+    await presented;
+    expect(calls.map((call) => call.method), ['prepare', 'present']);
+    expect(calls.last.arguments['image'], frame);
+  });
+
+  test('a diagnostic response cannot enable a non-diagnostic build', () async {
+    if (NativeInkSession.diagnosticsEnabled) return;
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      NativeInkSession.channel,
+      (_) async => {'ready': true, 'diagnosticMode': 'record-only'},
+    );
+    expect(
+      await session.prepare(const Rect.fromLTWH(0, 0, 80, 90), 1),
+      isFalse,
+    );
+    expect(session.diagnosticMode, NativeInkDiagnosticMode.normal);
   });
 
   test('missing platform channel safely leaves Flutter as fallback', () async {

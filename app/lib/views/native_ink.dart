@@ -92,9 +92,18 @@ class _NativeInkViewportState extends State<NativeInkViewport>
     final boundary = _captureKey.currentContext?.findRenderObject();
     if (boundary is! RenderRepaintBoundary || !boundary.attached) return null;
     try {
+      final timing = NativeInkSession.diagnosticsEnabled
+          ? (Stopwatch()..start())
+          : null;
       final image = await boundary.toImage(pixelRatio: dpr);
+      final rasterMs = timing?.elapsedMilliseconds;
       try {
         final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (timing != null) {
+          debugPrint(
+            'MagicpieInk capture toImageMs=$rasterMs pngMs=${timing.elapsedMilliseconds - rasterMs!}',
+          );
+        }
         if (data == null) return null;
         return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       } finally {

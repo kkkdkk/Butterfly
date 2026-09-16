@@ -6,12 +6,17 @@ import 'package:flutter/widgets.dart';
 /// Experimental display-only bridge. Flutter remains the document input source.
 typedef NativeInkFrameCapture = Future<Uint8List?> Function(double dpr);
 
+enum NativeInkDiagnosticMode { normal, recordOnly, commitOnly, handoff }
+
 class NativeInkSession {
   static const experiment = bool.fromEnvironment('magicpieNativeInk');
+  static const diagnosticsEnabled =
+      experiment && bool.fromEnvironment('magicpieNativeInkDiagnostics');
   static final instance = NativeInkSession();
   static const channel = MethodChannel('linwood.dev/butterfly/native_ink');
 
   bool active = false;
+  NativeInkDiagnosticMode diagnosticMode = NativeInkDiagnosticMode.normal;
   int _generation = 0;
   bool _presentQueued = false;
   Rect? _dirty;
@@ -44,6 +49,7 @@ class NativeInkSession {
   }) async {
     final generation = ++_generation;
     active = false;
+    diagnosticMode = NativeInkDiagnosticMode.normal;
     _dirty = null;
     _dirtyRevision++;
     _viewportSize = rect.size;
@@ -53,14 +59,32 @@ class NativeInkSession {
       await _invoke('dispose');
       return false;
     }
-    final ready = await _invoke('prepare', {
-      'left': rect.left,
-      'top': rect.top,
-      'width': rect.width,
-      'height': rect.height,
-      'dpr': dpr,
-    });
+    Object? response;
+    try {
+      response = await channel.invokeMethod<Object?>('prepare', {
+        'left': rect.left,
+        'top': rect.top,
+        'width': rect.width,
+        'height': rect.height,
+        'dpr': dpr,
+        if (diagnosticsEnabled) 'diagnosticEnabled': true,
+      });
+    } catch (error) {
+      debugPrint('MagicpieInk prepare fallback: ${error.runtimeType}');
+    }
     if (generation != _generation) return false;
+    final ready =
+        response == true ||
+        (diagnosticsEnabled && response is Map && response['ready'] == true);
+    if (diagnosticsEnabled && response is Map) {
+      diagnosticMode = switch (response['diagnosticMode']) {
+        'record-only' => NativeInkDiagnosticMode.recordOnly,
+        'commit-only' => NativeInkDiagnosticMode.commitOnly,
+        'handoff' => NativeInkDiagnosticMode.handoff,
+        _ => NativeInkDiagnosticMode.normal,
+      };
+      debugPrint('MagicpieInk diagnosticMode=${diagnosticMode.name}');
+    }
     active = ready;
     debugPrint('MagicpieInk prepared=$ready');
     return ready;
@@ -69,6 +93,7 @@ class NativeInkSession {
   Future<void> dispose() async {
     ++_generation;
     active = false;
+    diagnosticMode = NativeInkDiagnosticMode.normal;
     _dirty = null;
     _dirtyRevision++;
     _captureFrame = null;
@@ -78,7 +103,17 @@ class NativeInkSession {
   /// Called only once final renderers exist, never from native pen callbacks.
   Future<void> presentAfterFrame({bool Function()? isReady}) async {
     if (!active || _presentQueued || _dirty == null) return;
+    // Keep the native session continuous. Per-stroke capture/restart reproduced
+    // disappearing ink on hardware; retain it only for explicit diagnostics.
+    if (diagnosticMode != NativeInkDiagnosticMode.handoff) {
+      debugPrint(
+        'MagicpieInk diagnostic skip capture/present: ${diagnosticMode.name}',
+      );
+      _dirty = null;
+      return;
+    }
     final generation = _generation;
+    final timing = diagnosticsEnabled ? (Stopwatch()..start()) : null;
     _presentQueued = true;
     var recapture = false;
     try {
@@ -87,6 +122,11 @@ class NativeInkSession {
         binding.scheduleFrame();
       }
       await binding.endOfFrame;
+      if (timing != null) {
+        debugPrint(
+          'MagicpieInk handoff endOfFrameMs=${timing.elapsedMilliseconds}',
+        );
+      }
       if (!active || generation != _generation || !(isReady?.call() ?? true)) {
         return;
       }
@@ -101,6 +141,11 @@ class NativeInkSession {
       Uint8List? image;
       try {
         image = await captureFrame(_dpr);
+        if (timing != null) {
+          debugPrint(
+            'MagicpieInk handoff captureReadyMs=${timing.elapsedMilliseconds} bytes=${image?.length}',
+          );
+        }
       } catch (error) {
         debugPrint('MagicpieInk capture fallback: ${error.runtimeType}');
         if (generation == _generation && active) await dispose();
@@ -124,6 +169,11 @@ class NativeInkSession {
         'height': dirty.height * _dpr,
         'image': image,
       });
+      if (timing != null) {
+        debugPrint(
+          'MagicpieInk handoff completedMs=${timing.elapsedMilliseconds} presented=$presented',
+        );
+      }
       if (generation != _generation) return;
       if (!presented) {
         await dispose();

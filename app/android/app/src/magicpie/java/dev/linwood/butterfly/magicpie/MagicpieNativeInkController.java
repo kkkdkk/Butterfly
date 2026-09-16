@@ -22,6 +22,7 @@ import com.yitoa.rk.handwriting3.HandWritingEvent;
 import com.yitoa.rk.handwriting3.HandWritingNative;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -33,22 +34,34 @@ import io.flutter.embedding.android.FlutterView;
 @Keep
 public final class MagicpieNativeInkController {
     private static final String TAG = "MagicpieNativeInk";
+    private static final String DIAGNOSTIC_EXTRA = "magicpieInkDiagnostic";
+    private static final String DIAGNOSTIC_NORMAL = "normal";
+    private static final String DIAGNOSTIC_RECORD_ONLY = "record-only";
+    private static final String DIAGNOSTIC_COMMIT_ONLY = "commit-only";
+    private static final String DIAGNOSTIC_HANDOFF = "handoff";
 
     private final Activity activity;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final List<Bitmap> retainedSetupBitmaps = new ArrayList<>();
     private final Object pressureLock = new Object();
+    private final String configuredDiagnosticMode;
+    private final InkDiagnosticRecorder diagnosticRecorder;
 
     private HandWritingNative nativeInk;
     private Rect eligibleScreenRect;
     private Rect deferredDirtyRect;
     private SurfaceView flutterSurfaceView;
     private MethodChannel.Result pendingResult;
+    private boolean pendingDiagnosticPrepareResponse;
     private int generation;
     private boolean initialized;
     private boolean started;
     private boolean penDown;
     private boolean ordinaryStylusDown;
+    private boolean diagnosticsEnabled;
+    private boolean diagnosticGestureOwned;
+    private long activeDiagnosticStrokeId;
+    private long lastCompletedDiagnosticStrokeId;
     private volatile Handler watchdogHandler;
     private volatile long lastMainHeartbeat;
 
@@ -65,6 +78,9 @@ public final class MagicpieNativeInkController {
 
     public MagicpieNativeInkController(Activity activity) {
         this.activity = activity;
+        configuredDiagnosticMode = normalizeDiagnosticMode(
+                activity.getIntent().getStringExtra(DIAGNOSTIC_EXTRA));
+        diagnosticRecorder = new InkDiagnosticRecorder(activity);
     }
 
     /**
@@ -72,28 +88,40 @@ public final class MagicpieNativeInkController {
      * Rect values are logical coordinates relative to FlutterView; dpr converts them to pixels.
      */
     public void prepare(Map<?, ?> arguments, MethodChannel.Result result) {
+        boolean diagnosticRequested = Boolean.TRUE.equals(arguments.get("diagnosticEnabled"));
+        diagnosticsEnabled = diagnosticRequested
+                && !DIAGNOSTIC_NORMAL.equals(configuredDiagnosticMode);
+        String mode = effectiveDiagnosticMode();
+        Log.i(TAG, "Prepare diagnosticMode=" + mode
+                + " requested=" + (diagnosticRequested ? 1 : 0));
+        if (diagnosticRequested && DIAGNOSTIC_NORMAL.equals(mode)) {
+            Log.w(TAG, "Diagnostic mode missing or invalid; native diagnostic not started");
+            dispose();
+            finishPrepare(result, false, true);
+            return;
+        }
         if (!isSupportedDevice() || penDown) {
-            result.success(false);
+            finishPrepare(result, false, diagnosticRequested);
             return;
         }
         if (!isActivityReady()) {
             dispose();
-            result.success(false);
+            finishPrepare(result, false, diagnosticRequested);
             return;
         }
 
         CaptureTarget target = parseCaptureTarget(arguments);
         if (target == null) {
             Log.w(TAG, "Native preview not prepared: Flutter surface or bounds unavailable");
-            result.success(false);
+            finishPrepare(result, false, diagnosticRequested);
             return;
         }
         if (!shutdownNativeSession()) {
-            result.success(false);
+            finishPrepare(result, false, diagnosticRequested);
             return;
         }
 
-        int operation = beginOperation(result);
+        int operation = beginOperation(result, diagnosticRequested);
         eligibleScreenRect = target.screenRect;
         Log.i(TAG, "Preparing screenRect=" + eligibleScreenRect
                 + " rotation=" + activity.getWindowManager().getDefaultDisplay().getRotation());
@@ -104,6 +132,13 @@ public final class MagicpieNativeInkController {
 
     /** Uses a rasterized Flutter canvas snapshot, never a possibly stale SurfaceView buffer. */
     public void present(Map<?, ?> arguments, MethodChannel.Result result) {
+        String mode = effectiveDiagnosticMode();
+        if (!DIAGNOSTIC_HANDOFF.equals(mode)) {
+            Log.i(TAG, "Present rejected diagnosticMode=" + mode
+                    + " strokeId=" + lastCompletedDiagnosticStrokeId);
+            result.success(false);
+            return;
+        }
         if (!isActivityReady()) {
             dispose();
             result.success(false);
@@ -133,6 +168,7 @@ public final class MagicpieNativeInkController {
             return;
         }
         Bitmap bitmap = null;
+        long decodeStarted = SystemClock.uptimeMillis();
         try {
             byte[] encoded = (byte[]) image;
             BitmapFactory.Options options = new BitmapFactory.Options();
@@ -154,27 +190,60 @@ public final class MagicpieNativeInkController {
             result.success(false);
             return;
         }
+        long decodeMs = SystemClock.uptimeMillis() - decodeStarted;
         deferredDirtyRect = null;
-        int operation = beginOperation(result);
-        applyPresentedBackground(operation, bitmap, dirtyRect);
+        int operation = beginOperation(result, false);
+        applyPresentedBackground(operation, bitmap, dirtyRect, decodeMs);
     }
 
     /** Stops and destroys native state. A later restart requires an explicit prepare call. */
     public boolean dispose() {
         invalidatePendingOperation();
+        if (diagnosticRecorder.hasActiveStroke()) {
+            lastCompletedDiagnosticStrokeId = activeDiagnosticStrokeId;
+            diagnosticRecorder.finishStroke(!diagnosticGestureOwned, "disposed");
+            activeDiagnosticStrokeId = 0;
+            // Keep diagnosticGestureOwned sticky until this gesture's UP/CANCEL.
+            // Otherwise Flutter would receive an orphan terminal event.
+        }
         eligibleScreenRect = null;
         deferredDirtyRect = null;
         flutterSurfaceView = null;
         return shutdownNativeSession();
     }
 
-    /** Audits input and controls exclusion without consuming the event. */
-    public void onMotionEvent(MotionEvent event) {
+    /** Audits input and returns whether record-only diagnostics own this gesture. */
+    public boolean onMotionEvent(MotionEvent event) {
         int action = event.getActionMasked();
         int actionIndex = event.getActionIndex();
         int toolType = event.getToolType(Math.min(actionIndex, event.getPointerCount() - 1));
         boolean stylusLike = toolType == MotionEvent.TOOL_TYPE_STYLUS
                 || toolType == MotionEvent.TOOL_TYPE_ERASER;
+
+        if (action == MotionEvent.ACTION_DOWN) {
+            if (diagnosticRecorder.hasActiveStroke()) {
+                diagnosticRecorder.finishStroke(
+                        !diagnosticGestureOwned,
+                        "superseded-down");
+                diagnosticGestureOwned = false;
+            }
+            if (stylusLike && diagnosticsEnabled) {
+                boolean eligibleStylus = isEligibleOrdinaryStylusDown(event, toolType);
+                boolean nativeReady = initialized && started && nativeInk != null
+                        && pendingResult == null;
+                activeDiagnosticStrokeId = diagnosticRecorder.beginStroke(
+                        effectiveDiagnosticMode(), eligibleStylus, nativeReady);
+                diagnosticGestureOwned = DIAGNOSTIC_RECORD_ONLY.equals(effectiveDiagnosticMode())
+                        && eligibleStylus && nativeReady;
+            } else {
+                diagnosticGestureOwned = false;
+                activeDiagnosticStrokeId = 0;
+            }
+        }
+        if (diagnosticRecorder.hasActiveStroke()) {
+            diagnosticRecorder.record(event);
+        }
+        boolean consumeGesture = diagnosticGestureOwned;
 
         if (stylusLike) {
             auditStylusEvent(event, action, actionIndex);
@@ -182,12 +251,7 @@ public final class MagicpieNativeInkController {
 
         if (action == MotionEvent.ACTION_DOWN) {
             penDown = stylusLike;
-            boolean eligibleStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS
-                    && event.getPointerCount() == 1
-                    && event.getButtonState() == 0
-                    && eligibleScreenRect != null
-                    && eligibleScreenRect.contains(
-                    Math.round(event.getRawX()), Math.round(event.getRawY()));
+            boolean eligibleStylus = isEligibleOrdinaryStylusDown(event, toolType);
             ordinaryStylusDown = eligibleStylus;
             Log.i(TAG, "DOWN state stylus=" + (toolType == MotionEvent.TOOL_TYPE_STYLUS ? 1 : 0)
                     + " eligible=" + (eligibleStylus ? 1 : 0)
@@ -219,12 +283,46 @@ public final class MagicpieNativeInkController {
             ordinaryStylusDown = false;
             stopForInputExclusion("stylus cancel");
         }
+
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            if (diagnosticRecorder.hasActiveStroke()) {
+                lastCompletedDiagnosticStrokeId = activeDiagnosticStrokeId;
+                diagnosticRecorder.finishStroke(
+                        !consumeGesture,
+                        action == MotionEvent.ACTION_UP ? "up" : "cancel");
+            }
+            diagnosticGestureOwned = false;
+            activeDiagnosticStrokeId = 0;
+        }
+        return consumeGesture;
+    }
+
+    private boolean isEligibleOrdinaryStylusDown(MotionEvent event, int toolType) {
+        return toolType == MotionEvent.TOOL_TYPE_STYLUS
+                && event.getPointerCount() == 1
+                && event.getButtonState() == 0
+                && eligibleScreenRect != null
+                && eligibleScreenRect.contains(
+                Math.round(event.getRawX()), Math.round(event.getRawY()));
     }
 
     private boolean isSupportedDevice() {
         return Build.VERSION.SDK_INT == 27
                 && (Build.DEVICE.equals("px30_eink_magicpie")
                 || Build.MODEL.equalsIgnoreCase("Magicpie M1"));
+    }
+
+    private String effectiveDiagnosticMode() {
+        return diagnosticsEnabled ? configuredDiagnosticMode : DIAGNOSTIC_NORMAL;
+    }
+
+    private static String normalizeDiagnosticMode(String mode) {
+        if (DIAGNOSTIC_RECORD_ONLY.equals(mode)
+                || DIAGNOSTIC_COMMIT_ONLY.equals(mode)
+                || DIAGNOSTIC_HANDOFF.equals(mode)) {
+            return mode;
+        }
+        return DIAGNOSTIC_NORMAL;
     }
 
     private boolean isActivityReady() {
@@ -418,7 +516,8 @@ public final class MagicpieNativeInkController {
         try {
             startMainThreadWatchdog();
             nativeInk = new HandWritingNative();
-            nativeInk.setEventListener(this::onNativeEvent);
+            HandWritingNative sessionInk = nativeInk;
+            sessionInk.setEventListener(event -> onNativeEvent(sessionInk, event));
             nativeInk.rotate(activity.getWindowManager().getDefaultDisplay().getRotation());
             if (!nativeInk.init(eligibleScreenRect)) {
                 retainedSetupBitmaps.add(bitmap);
@@ -439,7 +538,7 @@ public final class MagicpieNativeInkController {
             if (!started) {
                 shutdownNativeSession();
             }
-            Log.i(TAG, started ? "Native fixed-width preview started" : "Native preview start failed");
+            Log.i(TAG, started ? "Native pressure preview started (2-14px)" : "Native preview start failed");
             finishOperation(operation, started);
         } catch (Throwable error) {
             if (!retainedSetupBitmaps.contains(bitmap) && !bitmap.isRecycled()) {
@@ -451,7 +550,8 @@ public final class MagicpieNativeInkController {
         }
     }
 
-    private void applyPresentedBackground(int operation, Bitmap bitmap, Rect dirtyRect) {
+    private void applyPresentedBackground(
+            int operation, Bitmap bitmap, Rect dirtyRect, long decodeMs) {
         retainedSetupBitmaps.add(bitmap);
         try {
             if (!isActivityReady() || penDown || operation != generation || pendingResult == null) {
@@ -461,24 +561,44 @@ public final class MagicpieNativeInkController {
                 finishOperation(operation, false);
                 return;
             }
+            long stopStarted = SystemClock.uptimeMillis();
             if (started) {
                 nativeInk.stop();
                 started = false;
             }
-            if (!nativeInk.setup(bitmap)) {
+            long stopMs = SystemClock.uptimeMillis() - stopStarted;
+            long setupStarted = SystemClock.uptimeMillis();
+            boolean setupReady = nativeInk.setup(bitmap);
+            long setupMs = SystemClock.uptimeMillis() - setupStarted;
+            if (!setupReady) {
                 shutdownNativeSession();
                 finishOperation(operation, false);
                 return;
             }
             releaseReplacedBitmaps(bitmap);
             nativeInk.setBrush(4, 0, true);
+            long startStarted = SystemClock.uptimeMillis();
             started = nativeInk.start();
+            long startMs = SystemClock.uptimeMillis() - startStarted;
             if (!started) {
                 shutdownNativeSession();
                 finishOperation(operation, false);
                 return;
             }
+            long renderStarted = SystemClock.uptimeMillis();
             nativeInk.renderRect(dirtyRect);
+            // renderRect switches off direct brush mode on this firmware.
+            // Restore it for the next stroke in the diagnostic handoff path.
+            nativeInk.setBrush(4, 0, true);
+            long renderMs = SystemClock.uptimeMillis() - renderStarted;
+            if (DIAGNOSTIC_HANDOFF.equals(effectiveDiagnosticMode())) {
+                Log.i(TAG, "Diagnostic handoff strokeId=" + lastCompletedDiagnosticStrokeId
+                        + " decodeMs=" + decodeMs
+                        + " stopMs=" + stopMs
+                        + " setupMs=" + setupMs
+                        + " startMs=" + startMs
+                        + " renderRectMs=" + renderMs);
+            }
             Log.i(TAG, "Presented rasterized canvas rect left=" + dirtyRect.left
                     + " top=" + dirtyRect.top
                     + " right=" + dirtyRect.right
@@ -500,9 +620,10 @@ public final class MagicpieNativeInkController {
         shutdownNativeSession();
     }
 
-    private int beginOperation(MethodChannel.Result result) {
+    private int beginOperation(MethodChannel.Result result, boolean diagnosticPrepareResponse) {
         invalidatePendingOperation();
         pendingResult = result;
+        pendingDiagnosticPrepareResponse = diagnosticPrepareResponse;
         return generation;
     }
 
@@ -510,8 +631,10 @@ public final class MagicpieNativeInkController {
         generation++;
         if (pendingResult != null) {
             MethodChannel.Result result = pendingResult;
+            boolean diagnosticPrepareResponse = pendingDiagnosticPrepareResponse;
             pendingResult = null;
-            result.success(false);
+            pendingDiagnosticPrepareResponse = false;
+            completeResult(result, false, diagnosticPrepareResponse);
         }
     }
 
@@ -520,8 +643,27 @@ public final class MagicpieNativeInkController {
             return;
         }
         MethodChannel.Result result = pendingResult;
+        boolean diagnosticPrepareResponse = pendingDiagnosticPrepareResponse;
         pendingResult = null;
-        result.success(success);
+        pendingDiagnosticPrepareResponse = false;
+        completeResult(result, success, diagnosticPrepareResponse);
+    }
+
+    private void finishPrepare(
+            MethodChannel.Result result, boolean ready, boolean diagnosticPrepareResponse) {
+        completeResult(result, ready, diagnosticPrepareResponse);
+    }
+
+    private void completeResult(
+            MethodChannel.Result result, boolean ready, boolean diagnosticPrepareResponse) {
+        if (!diagnosticPrepareResponse) {
+            result.success(ready);
+            return;
+        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("ready", ready);
+        response.put("diagnosticMode", effectiveDiagnosticMode());
+        result.success(response);
     }
 
     private boolean shutdownNativeSession() {
@@ -662,9 +804,16 @@ public final class MagicpieNativeInkController {
         androidPressureSamples++;
     }
 
-    private void onNativeEvent(HandWritingEvent event) {
+    private void onNativeEvent(HandWritingNative sessionInk, HandWritingEvent event) {
         if (!event.isValid() || !Float.isFinite(event.getPressure())) {
             return;
+        }
+        if (event.getAction() == HandWritingEvent.ACTION_DOWN
+                || event.getAction() == HandWritingEvent.ACTION_MOVE) {
+            // Verified in the standalone probe: this callback runs on the
+            // native input thread before it draws this sample. Do not post.
+            int width = Math.round(2 + 12 * Math.max(0, Math.min(1, event.getPressure())));
+            sessionInk.setBrush(width, 0, true);
         }
         synchronized (pressureLock) {
             if (event.getAction() == HandWritingEvent.ACTION_DOWN) {
@@ -689,7 +838,7 @@ public final class MagicpieNativeInkController {
                     "UP stats down=%d move=%d up=%d history=%d eventLagMs=%d "
                             + "androidPressureSamples=%d androidPressureMin=%s androidPressureMax=%s "
                             + "nativeValidPressureSamples=%d nativePressureMin=%s nativePressureMax=%s "
-                            + "fixedWidthPreview=1 pressureRenderingVerified=0",
+                            + "dynamicWidthPreview=1 widthRange=2..14",
                     androidDownCount,
                     androidMoveCount,
                     androidUpCount,

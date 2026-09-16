@@ -7,10 +7,14 @@ param(
     [ValidateSet('debug', 'release')]
     [string]$BuildMode = 'release',
     [switch]$SkipPubGet,
-    [switch]$NativeInkExperiment
+    [switch]$NativeInkExperiment,
+    [switch]$NativeInkDiagnostics
 )
 
 $ErrorActionPreference = 'Stop'
+if ($NativeInkDiagnostics -and -not $NativeInkExperiment) {
+    throw 'NativeInkDiagnostics requires NativeInkExperiment.'
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $customCacheRoot = -not [string]::IsNullOrWhiteSpace($CacheRoot)
 
@@ -75,6 +79,9 @@ try {
     # Flutter 3.44 also skips Android plugin registration with --no-pub.
     if ($NativeInkExperiment) {
         $arguments += '--dart-define=magicpieNativeInk=true'
+    }
+    if ($NativeInkDiagnostics) {
+        $arguments += '--dart-define=magicpieNativeInkDiagnostics=true'
     }
     # Keep build's normal preparation even when explicit pub get was skipped.
     & $flutter @arguments

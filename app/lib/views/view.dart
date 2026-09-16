@@ -464,11 +464,15 @@ class _MainViewViewportState extends State<MainViewViewport>
     _EventContextGetter getEventContext,
     _TemporaryToolChanger changeTemporaryTool,
   ) async {
-    cubit.removePointer(event.pointer);
-    _pointerKinds.remove(event.pointer);
-    cubit.removeButtons();
-    if (cubit.state.pointers.isEmpty) {
-      _isScalingDisabled = null;
+    try {
+      await getHandler().onPointerCancel(event, getEventContext());
+    } finally {
+      cubit.removePointer(event.pointer);
+      _pointerKinds.remove(event.pointer);
+      cubit.removeButtons();
+      if (cubit.state.pointers.isEmpty) {
+        _isScalingDisabled = null;
+      }
     }
   }
 

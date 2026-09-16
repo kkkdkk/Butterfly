@@ -2,6 +2,7 @@ package dev.linwood.butterfly;
 
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Bundle;
 import android.util.Log;
 import android.view.MotionEvent;
 
@@ -17,6 +18,8 @@ import java.util.Collections;
 import java.util.Map;
 
 import io.flutter.embedding.android.FlutterActivity;
+import io.flutter.embedding.android.FlutterView;
+import io.flutter.embedding.android.AndroidTouchProcessor;
 import io.flutter.plugin.common.MethodChannel;
 
 
@@ -33,6 +36,41 @@ public class MainActivity extends FlutterActivity {
     private Method nativeInkPresent;
     private Method nativeInkDispose;
     private Method nativeInkMotionEvent;
+    private boolean bufferedStylusGesture;
+
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (nativeInkController == null
+                || android.os.Build.VERSION.SDK_INT != 27
+                || !android.os.Build.DEVICE.equals("px30_eink_magicpie")) {
+            return;
+        }
+        FlutterView flutterView = findViewById(FLUTTER_VIEW_ID);
+        if (flutterView == null || getFlutterEngine() == null) return;
+        // On this firmware, requestUnbufferedDispatch reproduces a ~15-second
+        // first-stroke stall followed by CANCEL even in the standalone probe.
+        // Use Flutter's normal packet conversion at the same view-local coords,
+        // but leave Android batching enabled. Match FlutterView's tracker flag.
+        AndroidTouchProcessor touchProcessor = new AndroidTouchProcessor(
+                getFlutterEngine().getRenderer(), false);
+        flutterView.setOnTouchListener((view, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                int tool = event.getToolType(0);
+                bufferedStylusGesture = tool == MotionEvent.TOOL_TYPE_STYLUS
+                        || tool == MotionEvent.TOOL_TYPE_ERASER;
+            }
+            boolean owned = bufferedStylusGesture;
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                bufferedStylusGesture = false;
+            }
+            if (!owned || !flutterView.isAttachedToFlutterEngine()) return false;
+            BufferedStylusInput.dispatch(event, touchProcessor::onTouchEvent);
+            return true;
+        });
+        Log.i(NATIVE_INK_TAG, "Magicpie API27 buffered Flutter stylus input enabled");
+    }
 
     @Override
     @Nullable
@@ -219,15 +257,17 @@ public class MainActivity extends FlutterActivity {
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         long begin = android.os.SystemClock.uptimeMillis();
+        boolean nativeInkConsumed = false;
         if (nativeInkController != null && nativeInkMotionEvent != null) {
             try {
-                nativeInkMotionEvent.invoke(nativeInkController, event);
+                nativeInkConsumed = Boolean.TRUE.equals(
+                        nativeInkMotionEvent.invoke(nativeInkController, event));
             } catch (ReflectiveOperationException error) {
                 Log.w(NATIVE_INK_TAG, "Native ink event audit failed", unwrap(error));
             }
         }
         long audited = android.os.SystemClock.uptimeMillis();
-        boolean handled = super.dispatchTouchEvent(event);
+        boolean handled = nativeInkConsumed || super.dispatchTouchEvent(event);
         long finished = android.os.SystemClock.uptimeMillis();
         if (nativeInkController != null && (finished - begin >= 100
                 || event.getActionMasked() == MotionEvent.ACTION_DOWN
@@ -235,6 +275,7 @@ public class MainActivity extends FlutterActivity {
             Log.i(NATIVE_INK_TAG, "Dispatch action=" + event.getActionMasked()
                     + " auditMs=" + (audited - begin)
                     + " flutterMs=" + (finished - audited)
+                    + " diagnosticConsumed=" + (nativeInkConsumed ? 1 : 0)
                     + " arrivalLagMs=" + Math.max(0, begin - event.getEventTime()));
         }
         return handled;

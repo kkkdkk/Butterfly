@@ -79,6 +79,26 @@ class PenHandler extends Handler<PenTool> with ColoredHandler {
     lastPosit = null;
   }
 
+  // Discard an interrupted live stroke without touching submitted elements.
+  @override
+  Future<void> onPointerCancel(
+    PointerCancelEvent event,
+    EventContext context,
+  ) async {
+    final cancelled = elements.remove(event.pointer);
+    _elementPoints.remove(event.pointer);
+    lastPosition.remove(event.pointer);
+    if (cancelled == null) return;
+    // A cancelled pointer will never receive UP. Do not let its unfinished
+    // element keep hasPendingInk true or submit it as a completed stroke.
+    isDrawing = elements.isNotEmpty;
+    _positionCheckTimer?.cancel();
+    _positionCheckTimer = null;
+    points.clear();
+    lastPosit = null;
+    await context.refreshForegrounds();
+  }
+
   // Flag to check if elements are being submitted.
   bool _currentlyBaking = false;
   DocumentBloc? _bloc;

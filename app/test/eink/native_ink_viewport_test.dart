@@ -278,6 +278,7 @@ void main() {
 
     drawLine.value = true;
     await tester.pump();
+    NativeInkSession.instance.diagnosticMode = NativeInkDiagnosticMode.handoff;
     NativeInkSession.instance.addDirty(const Rect.fromLTWH(10, 10, 80, 20));
     late Future<void> presented;
     await tester.runAsync(() async {
